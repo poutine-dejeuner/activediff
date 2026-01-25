@@ -1,0 +1,27 @@
+# Active Learning Configuration for DDPM-based Nanophotonic Design
+
+# Data paths
+data:
+  initial_data_path: "./data/imagesnorm.npy"
+  output_dir: "./active_learning_output"
+
+# Active learning parameters
+active_learning:
+  fom_threshold: 0.48
+  distance_threshold: 10
+  n_samples_per_iter: 1000
+  max_iterations: 10
+
+# DDPM training parameters
+ddpm:
+  # max_epochs: 100
+  # batch_size: 32
+  # learning_rate: 1.0e-4
+  
+# Sample generation parameters
+generation:
+  batch_size: 100
+  
+# FOM computation parameters
+fom:
+  n_parallel_workers: 8

@@ -1,0 +1,21 @@
+data:
+  initial_data_path: "./data/images.npy"
+  output_dir: "./test_output"
+
+active_learning:
+  fom_threshold: 0.48
+  distance_threshold: 0.1
+  n_samples_per_iter: 4
+  max_iterations: 2
+
+ddpm:
+  max_epochs: 1
+  batch_size: 8
+  learning_rate: 1.0e-3
+
+generation:
+  batch_size: 10
+
+fom:
+  skip_meep: true  # Skip MEEP computation for testing
+  n_parallel_workers: 2
