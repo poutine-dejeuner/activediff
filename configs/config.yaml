@@ -1,0 +1,60 @@
+defaults:
+  - _self_
+  - model: unet
+  - train: unet
+  - evaluation: base
+  - datamodule: nanophoto
+
+# Active learning parameters
+active_learning:
+  fom_threshold: 0.48
+  distance_threshold: 10
+  n_samples_per_iter: 1000
+  max_iterations: 10
+  resume_training: true  # If true, continue from previous iteration's checkpoint; if false, train from scratch
+
+# Generation parameters
+generation:
+  batch_size: 100
+
+# FOM computation parameters
+fom:
+  n_parallel_workers: 8
+  skip_meep: false
+
+# Weights & Biases logging
+wandb:
+  enabled: true
+  project: activediff
+  entity: nanophoto
+  name: active-diffusion
+  tags: []
+  notes: null
+
+# Training parameters
+training:
+  n_compute_steps: 5_000_000
+  max_epochs: 100
+  val_split: 0.1
+  fast_dev_run: false
+  early_stopping:
+    enabled: true
+    monitor: val_loss
+    patience: 10
+    mode: min
+    min_delta: 0.0001
+  threshold_stopping:
+    enabled: true
+    monitor: val_loss
+    threshold: 0.0003
+    mode: min
+
+# PyTorch Lightning Trainer configuration
+trainer:
+  _target_: pytorch_lightning.Trainer
+  max_epochs: ${training.max_epochs}
+  accelerator: auto
+  devices: 1
+  enable_progress_bar: true
+  log_every_n_steps: 10
+  fast_dev_run: ${training.fast_dev_run}

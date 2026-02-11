@@ -1,3 +1,8 @@
 __pycache__/
 data/
 active_learning_output/
+test_output/
+.schemas
+.vscode/
+wandb/
+outputs/

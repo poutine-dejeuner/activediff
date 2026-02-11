@@ -1,0 +1,14 @@
+_target_: photo_gen.models.unet_fast.train_fast
+_partial_: true
+
+n_compute_steps: 5_000_000
+seed: -1
+lr: 0.0001
+batch_size: 32
+num_time_steps: 1000
+ema_decay: 0.9999
+
+# Mixed precision and optimization flags
+use_mixed_precision: true
+gradient_accumulation_steps: 2
+compile_model: true

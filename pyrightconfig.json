@@ -1,0 +1,8 @@
+{
+  "venvPath": "/home/vincent/mambaforge/envs",
+  "venv": "exp",
+  "pythonPath": "/home/vincent/mambaforge/envs/exp/bin/python",
+  "extraPaths": [
+    "/home/vincent/repos/photo/photonics-generation"
+  ]
+}

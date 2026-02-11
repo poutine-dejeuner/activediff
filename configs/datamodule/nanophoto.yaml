@@ -1,0 +1,12 @@
+# Nanophotonic datamodule configuration
+_target_: datamodules.NanophotoDataModule
+
+# Paths (relative to project root)
+initial_data_path: data/imagesnorm.npy
+output_dir: active_learning_output
+output_file: new_images.npy
+
+# DataLoader parameters
+batch_size: ${train.batch_size}
+val_split: ${training.val_split}
+num_workers: 4
