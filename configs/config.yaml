@@ -2,27 +2,30 @@ defaults:
   - _self_
   - model: unet
   - train: unet
+  - inference: unet
   - evaluation: base
   - datamodule: nanophoto
 
-# Active learning parameters
+debug: false
+dtype: float32
+
+data:
+  image_shape: [101, 91]
+
 active_learning:
   fom_threshold: 0.48
   distance_threshold: 10
-  n_samples_per_iter: 1000
+  n_to_generate: 1000
   max_iterations: 10
-  resume_training: true  # If true, continue from previous iteration's checkpoint; if false, train from scratch
+  resume_training: true
 
-# Generation parameters
 generation:
   batch_size: 100
 
-# FOM computation parameters
 fom:
   n_parallel_workers: 8
   skip_meep: false
 
-# Weights & Biases logging
 wandb:
   enabled: true
   project: activediff
@@ -31,30 +34,34 @@ wandb:
   tags: []
   notes: null
 
-# Training parameters
-training:
-  n_compute_steps: 5_000_000
-  max_epochs: 100
-  val_split: 0.1
-  fast_dev_run: false
-  early_stopping:
-    enabled: true
-    monitor: val_loss
-    patience: 10
-    mode: min
-    min_delta: 0.0001
-  threshold_stopping:
-    enabled: true
-    monitor: val_loss
-    threshold: 0.0003
-    mode: min
+use_mixed_precision: true
+gradient_accumulation_steps: 2
+compile_model: true
 
-# PyTorch Lightning Trainer configuration
+train:
+  n_compute_steps: 5_000_000
+  seed: -1
+  lr: 0.0001
+  num_time_steps: 1000
+  ema_decay: 0.9999
+
 trainer:
-  _target_: pytorch_lightning.Trainer
-  max_epochs: ${training.max_epochs}
   accelerator: auto
   devices: 1
   enable_progress_bar: true
   log_every_n_steps: 10
-  fast_dev_run: ${training.fast_dev_run}
+  fast_dev_run: ${debug}
+
+callbacks:
+  early_stopping:
+    enabled: true
+    monitor: val/loss
+    patience: 500
+    mode: min
+    min_delta: 0.00001
+  threshold_stopping:
+    enabled: true
+    monitor: val/loss
+    threshold: 0.0003
+    mode: min
+  generate_image_every_n_epochs: 100

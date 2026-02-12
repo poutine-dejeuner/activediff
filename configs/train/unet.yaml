@@ -1,4 +1,4 @@
-_target_: photo_gen.models.unet_fast.train_fast
+# _target_: photo_gen.models.unet_fast.train_fast
 _partial_: true
 
 n_compute_steps: 5_000_000

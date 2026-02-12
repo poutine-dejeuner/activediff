@@ -176,6 +176,9 @@ class UNet(pl.LightningModule):
             residuals.append(r)
         for i in range(self.num_layers//2, self.num_layers):
             layer = getattr(self, f'Layer{i+1}')
+            # a = layer(x, embeddings)[0]
+            # b = residuals[self.num_layers-i-1]
+            # breakpoint()
             x = torch.concat(
                 (layer(x, embeddings)[0], residuals[self.num_layers-i-1]), dim=1)
         return self.output_conv(self.relu(self.late_conv(x)))
@@ -196,7 +199,6 @@ class UNet(pl.LightningModule):
         loss = self.criterion(output, e)
         self.ema.update(self)
 
-
         self.log('train/loss', loss, prog_bar=True, on_step=True, on_epoch=True)
         return loss
 
@@ -212,6 +214,10 @@ class UNet(pl.LightningModule):
         loss = self.criterion(output, e)
 
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+
+        binarization = torch.mean((output * (1 - output))).item()
+        self.log('val/binarization', binarization, on_step=False, on_epoch=True)
+
         return loss
 
     def configure_optimizers(self):
@@ -247,11 +253,11 @@ def train(data: np.ndarray, cfg, checkpoint_path: os.PathLike, savedir: os.PathL
     n_epochs = cfg.n_epochs
     lr = cfg.lr
     batch_size = cfg.batch_size
-    num_time_steps = cfg.num_time_steps
+    num_time_steps = cfg.model.time_steps
     ema_decay = cfg.ema_decay
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    assert data.shape[-2:] == cfg.image_shape
+    assert data.shape[-2:] == cfg.data.image_shape
     print("TRAINING")
     print(f"{n_epochs} epochs total")
     set_seed(random.randint(0, 2**32-1)) if seed == -1 else set_seed(seed)
@@ -270,7 +276,7 @@ def train(data: np.ndarray, cfg, checkpoint_path: os.PathLike, savedir: os.PathL
 
     pad_fn = UNetPad(data, depth=depth)
 
-    assert data.shape[-2:] == cfg.image_shape
+    assert data.shape[-2:] == cfg.data.image_shape
 
     train_dataset = TensorDataset(data)
     train_loader = DataLoader(
@@ -280,7 +286,7 @@ def train(data: np.ndarray, cfg, checkpoint_path: os.PathLike, savedir: os.PathL
     optimizer = optim.Adam(model.parameters(), lr=lr)
     ema = ModelEmaV3(model, decay=ema_decay)
     if checkpoint_path is not None and os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, weights_only=True)
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
         model.load_state_dict(checkpoint['weights'])
         ema.load_state_dict(checkpoint['ema'])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -328,22 +334,47 @@ def inference(cfg,
               meep_eval: bool = True,
               **kwargs,
               ):
-    num_time_steps = cfg.model.num_time_steps
-    ema_decay = cfg.model.ema_decay
-    n_images = cfg.n_to_generate if cfg.debug is False else 4
-    image_shape = tuple(cfg.image_shape)
+    num_time_steps = cfg.model.time_steps
+    ema_decay = cfg.train.ema_decay
+    n_images = cfg.active_learning.n_to_generate if cfg.debug is False else 4
+    image_shape = tuple(cfg.data.image_shape)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
     print("INFERENCE")
-    checkpoint = torch.load(checkpoint_path, weights_only=True)
+    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    
+    # Handle both Lightning checkpoints (.ckpt) and custom checkpoints (.pt)
+    if 'state_dict' in checkpoint:
+        # Lightning checkpoint format
+        state_dict = checkpoint['state_dict']
+        
+        # Filter out EMA keys (they're saved in the checkpoint separately)
+        model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith('ema.')}
+        
+        # Try to extract EMA state if it exists
+        ema_state = checkpoint.get('ema')
+        if ema_state is None:
+            # EMA might be embedded in state_dict with 'ema.' prefix
+            ema_keys = {k.replace('ema.', ''): v for k, v in state_dict.items() if k.startswith('ema.')}
+            ema_state = ema_keys if ema_keys else None
+            
+    elif 'weights' in checkpoint:
+        # Custom checkpoint format
+        model_state_dict = checkpoint['weights']
+        ema_state = checkpoint.get('ema')
+    else:
+        # Direct state dict
+        model_state_dict = checkpoint
+        ema_state = None
 
     model = hydra.utils.instantiate(cfg.model)
     model = model.to(device)
 
-    model.load_state_dict(checkpoint['weights'])
+    model.load_state_dict(model_state_dict)
     ema = ModelEmaV3(model, decay=ema_decay)
-    ema.load_state_dict(checkpoint['ema'])
+    if ema_state is not None:
+        ema.load_state_dict(ema_state)
     scheduler = DDPM_Scheduler(num_time_steps=num_time_steps, device=device)
     times = [0, 15, 50, 100, 200, 300, 400, 550, 700, 999]
     images = []

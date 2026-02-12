@@ -8,6 +8,8 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from omegaconf import DictConfig
 
+from models.unet_utils import UNetPad
+
 
 class NanophotoDataModule(pl.LightningDataModule):
     """Datamodule for loading and managing nanophotonic design data.
@@ -34,9 +36,10 @@ class NanophotoDataModule(pl.LightningDataModule):
         output_file: str = "new_images.npy",
         batch_size: int = 32,
         val_split: float = 0.1,
-        num_workers: int = 4
+        num_workers: int = 4,
+        unet_depth: int = 3,
+        dtype: str = 'float32',
     ):
-        super().__init__()
         super().__init__()
         self.initial_data_path = Path(initial_data_path)
         self.output_dir = Path(output_dir)
@@ -44,6 +47,8 @@ class NanophotoDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.val_split = val_split
         self.num_workers = num_workers
+        self.unet_depth = unet_depth
+        self.dtype = getattr(torch, dtype)
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +58,7 @@ class NanophotoDataModule(pl.LightningDataModule):
         self._new_samples: list[torch.Tensor] = []  # List of tensors, one per iteration
         self._train_dataset: Optional[torch.utils.data.Dataset] = None
         self._val_dataset: Optional[torch.utils.data.Dataset] = None
+        self.pad_fn: Optional[UNetPad] = None
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load initial training data from disk and restore previous state if available."""
@@ -61,7 +67,7 @@ class NanophotoDataModule(pl.LightningDataModule):
 
         print(f"Loading data from: {self.initial_data_path}")
         data = np.load(self.initial_data_path)
-        self._initial_training_data = torch.from_numpy(data)
+        self._initial_training_data = torch.from_numpy(data).to(dtype=self.dtype)
 
         # Handle dict format if needed
         if isinstance(self._initial_training_data, dict):
@@ -86,11 +92,20 @@ class NanophotoDataModule(pl.LightningDataModule):
         if data.ndim == 3:
             data = data[:, None, :, :]  # Add channel dimension
         data = torch.tensor(data, dtype=torch.float32)
-        dataset = TensorDataset(data)
+        
+        # Initialize padding function if not already done
+        if self.pad_fn is None:
+            self.pad_fn = UNetPad(data, depth=self.unet_depth)
+            print(f"Initialized UNetPad with depth={self.unet_depth}, input shape={data.shape}")
+        
+        # Apply padding to all data
+        data_padded = self.pad_fn(data)
+        
+        dataset = TensorDataset(data_padded)
 
         # Split into train/val
-        train_size = int(len(data) * (1 - self.val_split))
-        val_size = len(data) - train_size
+        train_size = int(len(data_padded) * (1 - self.val_split))
+        val_size = len(data_padded) - train_size
 
         train_set, val_set = random_split(dataset, [train_size, val_size])
 
@@ -172,11 +187,27 @@ class NanophotoDataModule(pl.LightningDataModule):
         checkpoint_files = sorted(self.output_dir.glob("checkpoint_iter_*.pt"))
 
         if not checkpoint_files:
+            print("No checkpoint files found")
+            # Even without checkpoint, try to load individual selected samples
+            selected_files = sorted(self.output_dir.glob("selected_samples_iter_*.pt"))
+            if selected_files:
+                print(f"Found {len(selected_files)} selected sample files without checkpoint")
+                for i, selected_path in enumerate(selected_files):
+                    print(f"Loading {selected_path}")
+                    selected = torch.load(selected_path, weights_only=False)
+                    selected = selected.to(dtype=self.dtype)
+                    self._new_samples.append(selected)
+                    print(f"  Loaded {len(selected)} samples from iteration {i}")
+                
+                if self._new_samples:
+                    total_samples = sum(len(s) for s in self._new_samples)
+                    print(f"Restored {len(self._new_samples)} iterations with {total_samples} total new samples")
+                return len(selected_files) - 1
             return None
 
         latest_checkpoint = checkpoint_files[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        checkpoint = torch.load(latest_checkpoint)
+        checkpoint = torch.load(latest_checkpoint, weights_only=False)
 
         # Load new_samples from individual iteration files
         iteration = checkpoint.get('iteration', -1)
@@ -185,8 +216,10 @@ class NanophotoDataModule(pl.LightningDataModule):
         for i in range(iteration + 1):
             selected_path = self.output_dir / f"selected_samples_iter_{i}.pt"
             if selected_path.exists():
-                selected = torch.load(selected_path)
+                selected = torch.load(selected_path, weights_only=False)
+                selected = selected.to(dtype=self.dtype)
                 self._new_samples.append(selected)
+                print(f"Loaded iteration {i}: {len(selected)} samples")
 
         if self._new_samples:
             print(f"Restored {len(self._new_samples)} iterations with "
@@ -199,11 +232,12 @@ class NanophotoDataModule(pl.LightningDataModule):
         new_images_path = self.output_dir / self.output_file
 
         if not new_images_path.exists():
+            print(f"No saved samples found at {new_images_path}")
             return
 
         print(f"Found saved samples: {new_images_path}")
         new_images = np.load(new_images_path)
-        new_images_tensor = torch.from_numpy(new_images)
+        new_images_tensor = torch.from_numpy(new_images).to(dtype=self.dtype)
 
         print(f"Initial data shape: {self._initial_training_data.shape}")
         print(f"New images shape: {new_images_tensor.shape}")

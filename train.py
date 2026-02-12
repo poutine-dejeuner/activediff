@@ -1,10 +1,13 @@
+from typing import Any
+from collections import defaultdict
+
 import torch
 import pytorch_lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 
 import hydra
 from hydra.utils import instantiate
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, open_dict
 import wandb
 
 from datamodules import NanophotoDataModule
@@ -12,7 +15,7 @@ from utils import compute_fom_scores, compute_distances, dist_select, fom_select
 from callbacks import get_training_callbacks
 
 
-def train_and_generate_samples(datamodule, logger, cfg, iteration, n_samples_per_iter):
+def train_and_generate_samples(datamodule, logger, cfg, iteration):
     """Train DDPM model and generate samples using PyTorch Lightning."""
     output_dir = datamodule.output_dir
 
@@ -40,18 +43,25 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration, n_samples_per
             print(f"Resuming training from previous checkpoint: {prev_checkpoint_path}")
 
     # Initialize model
+    dtype = getattr(torch, cfg.dtype)
     if prev_checkpoint_path is not None:
         model = instantiate(cfg.model).load_from_checkpoint(prev_checkpoint_path)
     else:
         model = instantiate(cfg.model)
+    model = model.to(dtype=dtype)
 
     # Setup callbacks
     callbacks = get_training_callbacks(cfg, checkpoint_dir)
 
     # Trainer
-    trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+    max_epochs = (cfg.train.n_compute_steps //
+                  len(datamodule.train_dataloader().dataset))
+    with open_dict(cfg):
+        cfg.trainer.max_epochs = max_epochs
+    
+    trainer = pl.Trainer(**dict(cfg.trainer), callbacks=callbacks, logger=logger)
 
-    print(f"Training DDPM for up to {cfg.training.max_epochs} epochs...")
+    print(f"Training DDPM for up to {max_epochs} epochs...")
 
     # Train the model with datamodule
     trainer.fit(model, datamodule)
@@ -59,10 +69,8 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration, n_samples_per
     # Save final checkpoint
     trainer.save_checkpoint(checkpoint_path)
 
-    print(f"\nGenerating {n_samples_per_iter} samples...")
-
     # Generate samples
-    inference = instantiate(cfg.inference)
+    inference = instantiate(cfg.model.inference)
     samples = inference(
         cfg=cfg,
         checkpoint_path=checkpoint_path,
@@ -70,8 +78,9 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration, n_samples_per
         meep_eval=False
     )
 
-    # Convert to torch tensor
-    samples = torch.from_numpy(samples).float()
+    # Convert to torch tensor with configured dtype
+    dtype = getattr(torch, cfg.dtype)
+    samples = torch.from_numpy(samples).to(dtype=dtype)
 
     print(f"Generated {len(samples)} samples with shape {samples.shape}")
 
@@ -81,12 +90,10 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration, n_samples_per
 @hydra.main(version_base="1.3", config_path="configs", config_name="config")
 def main(cfg: DictConfig) -> None:
 
-    print(cfg)
-
     # Initialize wandb if enabled
-    use_wandb = cfg.wandb.get('enabled', False)
+    use_wandb = cfg.wandb.get('enabled', False) and not cfg.debug
     logger = None
-    if use_wandb:
+    if use_wandb and not cfg.trainer.fast_dev_run:
         # Convert config to dict for wandb logging
         config_dict = OmegaConf.to_container(cfg, resolve=True)
         logger = WandbLogger( project=cfg.wandb.project,
@@ -100,7 +107,6 @@ def main(cfg: DictConfig) -> None:
 
     fom_threshold = cfg.active_learning.fom_threshold
     distance_threshold = cfg.active_learning.distance_threshold
-    n_samples_per_iter = cfg.active_learning.n_samples_per_iter
     max_iterations = cfg.active_learning.max_iterations
 
     for iteration in range(max_iterations):
@@ -108,8 +114,7 @@ def main(cfg: DictConfig) -> None:
 
         # Step 1: Train DDPM model and generate samples
         samples = train_and_generate_samples(
-            datamodule, logger, cfg, iteration, n_samples_per_iter
-        )
+            datamodule, logger, cfg, iteration)
 
         # Step 2: Select samples based on distance
         distances = compute_distances(samples, datamodule.training_data)

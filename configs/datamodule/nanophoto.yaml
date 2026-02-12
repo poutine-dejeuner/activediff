@@ -7,6 +7,12 @@ output_dir: active_learning_output
 output_file: new_images.npy
 
 # DataLoader parameters
-batch_size: ${train.batch_size}
-val_split: ${training.val_split}
+batch_size: 32
+val_split: 0.1
 num_workers: 4
+
+# UNet padding depth (num_layers // 2)
+unet_depth: 3
+
+# Data type for model and tensors
+dtype: ${dtype}

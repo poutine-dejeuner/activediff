@@ -1,27 +1,28 @@
+import numpy as np
+import torch
+from torch import cdist
 from nanophoto.meep_compute_fom import compute_FOM
 import multiprocessing
 from tqdm import tqdm
+from omegaconf import OmegaConf
 
 
-def compute_distances(samples, training_data):
+def compute_distances(samples: torch.Tensor, training_data: torch.Tensor) -> torch.Tensor:
     """Compute minimum distance from each sample to training data."""
     print(f"\nComputing distances to training data...")
 
-    # Flatten samples and training data for distance computation
-    samples_flat = samples.reshape(len(samples), -1).cpu().numpy()
-    training_flat = training_data.reshape(len(training_data), -1).cpu().numpy()
+    samples_flat = samples.reshape(len(samples), -1)
+    training_flat = training_data.reshape(len(training_data), -1)
 
-    # Compute pairwise distances
-    distances = cdist(samples_flat, training_flat, metric='euclidean')
+    distances = cdist(samples_flat, training_flat, p=2)
 
-    # Get minimum distance for each sample
-    min_distances = distances.min(axis=1)
+    min_distances = torch.min(distances, dim=1).values  # .values to get tensor from named tuple
 
     print(f"Min distances - Min: {min_distances.min():.4f}, "
           f"Max: {min_distances.max():.4f}, "
           f"Mean: {min_distances.mean():.4f}")
 
-    return torch.tensor(min_distances, dtype=torch.float32)
+    return min_distances
 
 
 def dist_select(samples, distances, distance_threshold):
