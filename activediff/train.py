@@ -10,9 +10,9 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf, DictConfig, open_dict
 import wandb
 
-from datamodules import NanophotoDataModule
-from utils import compute_fom_scores, compute_distances, dist_select, fom_select
-from callbacks import get_training_callbacks
+from activediff.datamodules import NanophotoDataModule
+from activediff.utils import compute_fom_scores, compute_distances, dist_select, fom_select
+from activediff.callbacks import get_training_callbacks
 
 
 def train_and_generate_samples(datamodule, logger, cfg, iteration):
@@ -45,7 +45,9 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
     # Initialize model
     dtype = getattr(torch, cfg.dtype)
     if prev_checkpoint_path is not None:
-        model = instantiate(cfg.model).load_from_checkpoint(prev_checkpoint_path)
+        # Load from checkpoint using dynamic class loading
+        model_class = get_class(cfg.model._target_)
+        model = model_class.load_from_checkpoint(prev_checkpoint_path)
     else:
         model = instantiate(cfg.model)
     model = model.to(dtype=dtype)

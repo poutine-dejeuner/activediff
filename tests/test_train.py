@@ -2,8 +2,90 @@ import numpy as np
 import torch
 import shutil
 from pathlib import Path
-from train import ActiveLearningDDPM
+import tempfile
 import yaml
+import pytest
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import get_class, instantiate
+
+
+def test_checkpoint_loading_with_get_class():
+    """Test that loading checkpoint with get_class works correctly."""
+    print("\n" + "="*60)
+    print("TESTING CHECKPOINT LOADING WITH get_class")
+    print("="*60)
+
+    # Create a minimal config
+    cfg = OmegaConf.create({
+        'model': {
+            '_target_': 'models.unet.UNet',
+            'time_steps': 100,
+            'image_shape': [64, 64],
+            'lr': 0.0001,
+            'ema_decay': 0.9999,
+            'num_layers': 6,
+            'first_channels': 32,
+            'input_channels': 1,
+            'output_channels': 1,
+            'num_groups': 8,
+            'dropout_prob': 0.1,
+            'num_heads': 4,
+            'Attentions': [False, False, True, False, True, False],
+            'Upscales': [False, False, False, True, True, True],
+        },
+        'dtype': 'float32'
+    })
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        checkpoint_path = tmpdir / "test_checkpoint.ckpt"
+
+        # Create and save a model
+        print("\n1. Creating initial model...")
+        model = instantiate(cfg.model)
+        trainer = __import__('pytorch_lightning').Trainer(
+            max_epochs=1,
+            fast_dev_run=True,
+            enable_progress_bar=False,
+            logger=False,
+            accelerator='auto'  # Use GPU if available
+        )
+
+        # Create dummy data
+        dummy_data = torch.randn(10, 1, 64, 64)
+        dummy_dataset = torch.utils.data.TensorDataset(dummy_data)
+        dummy_loader = torch.utils.data.DataLoader(dummy_dataset, batch_size=2)
+
+        # Train briefly
+        print("2. Training briefly...")
+        trainer.fit(model, dummy_loader, dummy_loader)
+
+        # Save checkpoint
+        print(f"3. Saving checkpoint to {checkpoint_path}...")
+        trainer.save_checkpoint(checkpoint_path)
+
+        assert checkpoint_path.exists(), "Checkpoint was not saved"
+        print(f"   Checkpoint saved: {checkpoint_path.stat().st_size} bytes")
+
+        # Load checkpoint using get_class (like in train.py)
+        print("\n4. Loading checkpoint with get_class...")
+        model_class = get_class(cfg.model._target_)
+        loaded_model = model_class.load_from_checkpoint(checkpoint_path)
+
+        assert loaded_model is not None, "Model failed to load"
+        assert isinstance(loaded_model, model_class), "Loaded model has wrong type"
+        print(f"   ✓ Model loaded successfully: {type(loaded_model).__name__}")
+
+        # Verify parameters match
+        print("\n5. Verifying model parameters...")
+        assert loaded_model.time_steps == 100, "time_steps mismatch"
+        assert loaded_model.lr == 0.0001, "lr mismatch"
+        assert loaded_model.num_layers == 6, "num_layers mismatch"
+        print("   ✓ All parameters match")
+
+    print("\n" + "="*60)
+    print("CHECKPOINT LOADING TEST PASSED!")
+    print("="*60)
 
 
 def test_active_learning():

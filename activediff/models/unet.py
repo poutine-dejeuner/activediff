@@ -19,7 +19,7 @@ from timm.utils.model_ema import ModelEmaV3
 import pytorch_lightning as pl
 
 from photo_gen.utils.utils import set_seed
-from models.unet_utils import (UNetPad, display_reverse,
+from activediff.models.unet_utils import (UNetPad, display_reverse,
                                         compute_unet_channels, DDPM_Scheduler)
 
 

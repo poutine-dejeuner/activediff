@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from omegaconf import DictConfig
 
-from models.unet_utils import UNetPad
+from activediff.models.unet_utils import UNetPad
 
 
 class NanophotoDataModule(pl.LightningDataModule):
