@@ -4,4 +4,4 @@ enable_progress_bar: true
 log_every_n_steps: 10
 check_val_every_n_epoch: 10  # Run validation every N epochs (default: 1)
 fast_dev_run: ${debug}
-auto_scale_batch_size: false  # Set to true to automatically find optimal batch size
+
