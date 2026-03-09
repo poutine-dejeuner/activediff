@@ -26,16 +26,18 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch>=2.0.0",
-    "pytorch-lightning>=2.0.0",
-    "hydra-core>=1.3.0",
-    "omegaconf>=2.3.0",
-    "numpy>=1.24.0",
-    "pillow>=10.0.0",
-    "wandb>=0.15.0",
-    "timm>=0.9.0",
+    "autograd",
     "einops>=0.7.0",
+    "hydra-core>=1.3.0",
+    "lightning>=2.0.0",
+    "matplotlib",
+    "numpy>=1.24.0",
+    "omegaconf>=2.3.0",
+    "pillow>=10.0.0",
+    "timm>=0.9.0",
+    "torch>=2.0.0, <=2.5.0",
     "tqdm>=4.65.0",
+    "wandb>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -46,15 +48,22 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
-]
-
-meep = [
-    "meep>=1.25.0",
+    "icecream",
+    "pretty-errors",
+    "ipython",
 ]
 
 all = [
-    "activediff[dev,meep]",
+    "activediff[dev]",
 ]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
 
 [project.urls]
 Homepage = "https://github.com/yourusername/activediff"

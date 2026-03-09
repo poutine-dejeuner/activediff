@@ -17,10 +17,11 @@ from einops import rearrange
 import hydra
 from timm.utils.model_ema import ModelEmaV3
 import pytorch_lightning as pl
+import matplotlib.pyplot as plt
 
-from photo_gen.utils.utils import set_seed
 from activediff.models.unet_utils import (UNetPad, display_reverse,
                                         compute_unet_channels, DDPM_Scheduler)
+from activediff.utils import set_seed
 
 
 class ResBlock(nn.Module):
@@ -125,6 +126,7 @@ class UNet(pl.LightningModule):
                  time_steps: int = 1000,
                  lr: float = 1e-4,
                  ema_decay: float = 0.9999,
+                 image_shape: tuple = None,
                  **kwargs):
         super().__init__()
         self.save_hyperparameters()
@@ -162,6 +164,7 @@ class UNet(pl.LightningModule):
         self.lr = lr
         self.ema_decay = ema_decay
         self.time_steps = time_steps
+        self.image_shape = image_shape
         self.ema = None
         self.criterion = nn.MSELoss(reduction='mean')
         self.scheduler_ddpm = DDPM_Scheduler(num_time_steps=time_steps, device=device)
@@ -199,7 +202,7 @@ class UNet(pl.LightningModule):
         loss = self.criterion(output, e)
         self.ema.update(self)
 
-        self.log('train/loss', loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log('train/loss', loss, prog_bar=False, on_step=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -214,9 +217,6 @@ class UNet(pl.LightningModule):
         loss = self.criterion(output, e)
 
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
-
-        binarization = torch.mean((output * (1 - output))).item()
-        self.log('val/binarization', binarization, on_step=False, on_epoch=True)
 
         return loss
 
@@ -336,7 +336,8 @@ def inference(cfg,
               ):
     num_time_steps = cfg.model.time_steps
     ema_decay = cfg.train.ema_decay
-    n_images = cfg.active_learning.n_to_generate if cfg.debug is False else 4
+    n_images = cfg.active_learning.get('n_to_generate_debug', 2) if cfg.debug else cfg.active_learning.n_to_generate
+    batch_size = cfg.generation.batch_size
     image_shape = tuple(cfg.data.image_shape)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
@@ -377,44 +378,59 @@ def inference(cfg,
         ema.load_state_dict(ema_state)
     scheduler = DDPM_Scheduler(num_time_steps=num_time_steps, device=device)
     times = [0, 15, 50, 100, 200, 300, 400, 550, 700, 999]
-    images = []
     z = torch.randn((1, 1,)+image_shape)
     padding_fn = UNetPad(z, depth=model.num_layers//2)
 
     with torch.no_grad():
-        samples = []
+        all_samples = []
         model = ema.module.eval()
-        for i in tqdm(range(n_images), disable=not sys.stdout.isatty()):
-            z = torch.randn((1, 1,)+image_shape, device=device)
+        
+        # Calculate number of batches
+        num_batches = (n_images + batch_size - 1) // batch_size
+        
+        for batch_idx in tqdm(range(num_batches), desc="Generating samples", disable=not sys.stdout.isatty()):
+            # Determine actual batch size for this iteration
+            current_batch_size = min(batch_size, n_images - batch_idx * batch_size)
+            
+            # Initialize batch of noise
+            z = torch.randn((current_batch_size, 1,) + image_shape, device=device)
             z = padding_fn(z)
 
+            # Reverse diffusion process for entire batch
             for t in reversed(range(1, num_time_steps)):
-                t = [t]
+                t_batch = [t] * current_batch_size
                 temp = (scheduler.beta[t]/((torch.sqrt(1-scheduler.alpha[t]))
                                            * (torch.sqrt(1-scheduler.beta[t]))))
-                z = (
-                    1/(torch.sqrt(1-scheduler.beta[t])))*z - (temp*model(z.cuda(), t))
-                if t[0] in times:
-                    images.append(z.cpu())
-                e = torch.randn((1, 1,) + image_shape, device=device)
-                e = padding_fn(e)
-                z = z + (e*torch.sqrt(scheduler.beta[t]))
+                z = (1/(torch.sqrt(1-scheduler.beta[t]))) * z - (temp * model(z, t_batch))
+                
+                # Add noise
+                e = torch.randn_like(z, device=device)
+                z = z + (e * torch.sqrt(scheduler.beta[t]))
+            
+            # Final denoising step (t=0)
             temp = scheduler.beta[0]/((torch.sqrt(1-scheduler.alpha[0]))
                                       * (torch.sqrt(1-scheduler.beta[0])))
-            x = (1/(torch.sqrt(1-scheduler.beta[0]))) * \
-                z - (temp*model(z.cuda(), [0]))
+            x = (1/(torch.sqrt(1-scheduler.beta[0]))) * z - (temp * model(z, [0] * current_batch_size))
 
-            samples.append(x)
-            images.append(x.cpu())
-            x = x.cpu().numpy()
-            x = rearrange(x.squeeze(0), 'c h w -> h w c')
-            display_reverse(images, savepath, i)
-            images = []
-    samples = torch.concat(samples, dim=0)
-    samples = padding_fn.inverse(samples).squeeze()
-    samples = samples.cpu().numpy()
-    samples = (samples - samples.min()) / (samples.max() - samples.min())
-    assert samples.shape == (n_images, 101, 91) or samples.shape == (101,91), samples.shape
-    np.save(savepath / "images.npy", samples)
+            # Remove padding and collect samples
+            x = padding_fn.inverse(x)
+            all_samples.append(x.cpu())
+        
+        # Concatenate all batches
+        samples = torch.cat(all_samples, dim=0).squeeze(1)
+        
+        # Save a visualization of the first sample
+        if savepath and len(samples) > 0:
+            x_vis = samples[0].numpy()
+            plt.figure(figsize=(3, 3))
+            plt.imshow(x_vis, cmap='gray')
+            plt.axis('off')
+            plt.savefig(savepath / "generated_sample_0.png", bbox_inches='tight')
+            plt.close()
+        
+        samples = samples.numpy()
+        samples = (samples - samples.min()) / (samples.max() - samples.min())
+        assert samples.shape == (n_images, 101, 91) or samples.shape == (101, 91), samples.shape
+        np.save(savepath / "images.npy", samples)
 
     return samples

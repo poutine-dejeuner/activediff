@@ -1,0 +1,39 @@
+model_checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  filename: checkpoint
+  save_top_k: 1
+  monitor: val/loss
+  mode: min
+
+generate_image:
+  _target_: activediff.callbacks.GenerateImageCallback
+  every_n_epochs: 100
+
+binarization_metric:
+  _target_: activediff.callbacks.BinarizationMetricCallback
+  every_n_epochs: 100
+
+threshold_stopping:
+  _target_: activediff.callbacks.ThresholdStopping
+  monitor: val/loss
+  threshold: 0.0003
+  mode: min
+  verbose: true
+
+# early_stopping:
+#   _target_: pytorch_lightning.callbacks.EarlyStopping
+#   monitor: val/loss
+#   patience: 500
+#   mode: min
+#   min_delta: 0.00001
+#   verbose: true
+
+# binarization_early_stopping:
+#   _target_: pytorch_lightning.callbacks.EarlyStopping
+#   monitor: val/bin
+#   patience: 50
+#   mode: min
+#   min_delta: 0.0001
+#   verbose: true
+#   stopping_threshold: 0.003
+

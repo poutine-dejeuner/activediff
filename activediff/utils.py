@@ -1,11 +1,18 @@
 import numpy as np
 import torch
 from torch import cdist
-from nanophoto.meep_compute_fom import compute_FOM
+from activediff.meep_compute_fom import compute_FOM
 import multiprocessing
 from tqdm import tqdm
 from omegaconf import OmegaConf
 
+def binarisation(images: torch.Tensor) -> float:
+    """Computes the average binarisation of a batch of images. The
+    binatization ioff an image is the mean of the min of {z, 1-z} for each
+    pixel, where z is the pixel value in [0, 1]."""
+    min_values = torch.min(images, 1 - images)
+    binarisation_scores = min_values.mean(dim=[1, 2])
+    return binarisation_scores
 
 def compute_distances(samples: torch.Tensor, training_data: torch.Tensor) -> torch.Tensor:
     """Compute minimum distance from each sample to training data."""
@@ -40,6 +47,56 @@ def dist_select(samples, distances, distance_threshold):
         print(f"Selected samples - Distance mean: {selected_distances.mean():.4f}")
 
     return selected_samples
+
+
+def filter_similar_samples(samples, fom_scores, distance_threshold):
+    """Filter samples by keeping only the best FOM for similar samples.
+    
+    Args:
+        samples: Tensor of shape (N, H, W)
+        fom_scores: Tensor of FOM scores for each sample
+        distance_threshold: Distance threshold below which samples are considered similar
+    
+    Returns:
+        Filtered samples and their FOM scores
+    """
+    print(f"\nFiltering similar samples with distance threshold {distance_threshold}...")
+    
+    # Flatten samples for distance computation
+    samples_flat = samples.reshape(len(samples), -1)
+    
+    # Compute pairwise distances between samples
+    pairwise_distances = cdist(samples_flat, samples_flat, p=2)
+    
+    # Sort samples by FOM score (descending)
+    sorted_indices = torch.argsort(fom_scores, descending=True)
+    
+    # Keep track of which samples to keep
+    keep_mask = torch.ones(len(samples), dtype=torch.bool)
+    
+    # Iterate through sorted samples
+    for i, idx_i in enumerate(sorted_indices):
+        if not keep_mask[idx_i]:
+            continue
+            
+        # Find similar samples (distance below threshold)
+        similar_mask = pairwise_distances[idx_i] < distance_threshold
+        
+        # Mark lower-FOM similar samples for removal
+        for idx_j in range(len(samples)):
+            if idx_j != idx_i and similar_mask[idx_j] and keep_mask[idx_j]:
+                # If scores are very close, keep both; otherwise keep the better one
+                if fom_scores[idx_j] < fom_scores[idx_i]:
+                    keep_mask[idx_j] = False
+    
+    filtered_samples = samples[keep_mask]
+    filtered_fom = fom_scores[keep_mask]
+    
+    print(f"Samples after similarity filtering: {keep_mask.sum()}/{len(samples)}")
+    if len(filtered_samples) > 0:
+        print(f"Filtered samples - FOM mean: {filtered_fom.mean():.4f}")
+    
+    return filtered_samples, filtered_fom
 
 
 def fom_select(samples, fom_scores, fom_threshold):
@@ -117,3 +174,14 @@ def compute_fom_scores(samples, cfg):
           f"Mean: {fom_scores.mean():.4f}")
 
     return fom_scores
+
+
+def set_seed(seed: int = 42):
+    if seed == -1:
+        return
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)

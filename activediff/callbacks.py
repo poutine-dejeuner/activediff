@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from PIL import Image
 from pathlib import Path
+from activediff.utils import binarisation
 
 
 class ThresholdStopping(pl.Callback):
@@ -127,57 +128,145 @@ class GenerateImageCallback(pl.Callback):
         print(f"Generated sample saved to: {save_path}")
 
 
+class BinarizationMetricCallback(pl.Callback):
+    """Compute and log binarization metric for generated samples.
+    
+    Args:
+        save_dir: Directory to save metrics
+        every_n_epochs: Compute metric every N epochs (default: 10)
+    """
+
+    def __init__(self, save_dir: Path = None, every_n_epochs: int = 10):
+        super().__init__()
+        self.save_dir = Path(save_dir) if save_dir else None
+        self.every_n_epochs = every_n_epochs
+        self.metrics_history = []
+        self.initialized = False
+
+    def on_train_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        """Initialize val/bin with a high value so EarlyStopping can monitor it."""
+        if not self.initialized:
+            pl_module.log("val/bin", 1.0, prog_bar=True, on_step=False, on_epoch=True)
+            self.initialized = True
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        """Compute binarization metric after training epoch."""
+        if trainer.current_epoch % self.every_n_epochs != 0:
+            return
+
+        # Verify required attributes exist
+        if not hasattr(pl_module, 'image_shape') or not hasattr(pl_module, 'time_steps'):
+            return
+        if not hasattr(pl_module, 'scheduler_ddpm'):
+            return
+
+        pl_module.eval()
+
+        with torch.no_grad():
+            # Generate multiple samples to compute average binarization
+            num_samples = 4
+            samples = []
+            
+            for _ in range(num_samples):
+                # Start from random noise
+                image_shape = getattr(pl_module, 'image_shape')
+                z = torch.randn(1, 1, *image_shape, device=pl_module.device)
+
+                # Apply padding if model has it
+                pad_fn = getattr(pl_module, 'pad_fn', None)
+                if pad_fn is not None:
+                    z = pad_fn(z)
+
+                # Use EMA model if available
+                ema = getattr(pl_module, 'ema', None)
+                model = ema.module if ema is not None else pl_module
+                scheduler = pl_module.scheduler_ddpm
+                time_steps = getattr(pl_module, 'time_steps')
+
+                # Reverse diffusion process
+                for t in reversed(range(1, time_steps)):
+                    t_list = [t]
+                    beta_t = scheduler.beta[t]
+                    alpha_t = scheduler.alpha[t]
+                    
+                    temp = (beta_t / (torch.sqrt(1 - alpha_t) * torch.sqrt(1 - beta_t)))
+                    z = (1 / torch.sqrt(1 - beta_t)) * z - (temp * model(z, t_list))
+
+                    # Add noise
+                    e = torch.randn_like(z)
+                    z = z + (e * torch.sqrt(beta_t))
+
+                # Final denoising step (t=0)
+                beta_0 = scheduler.beta[0]
+                alpha_0 = scheduler.alpha[0]
+                temp = (beta_0 / (torch.sqrt(1 - alpha_0) * torch.sqrt(1 - beta_0)))
+                x = (1 / torch.sqrt(1 - beta_0)) * z - (temp * model(z, [0]))
+
+                # Remove padding if applied
+                if pad_fn is not None and hasattr(pad_fn, 'unpad'):
+                    x = pad_fn.unpad(x)
+
+                samples.append(x)
+
+            # Concatenate samples and compute binarization
+            samples = torch.cat(samples, dim=0)
+            # Squeeze channel dimension if present
+            if samples.shape[1] == 1:
+                samples = samples.squeeze(1)
+            
+            bin_scores = binarisation(samples)
+            bin_metric = bin_scores.mean().item()
+
+        pl_module.train()
+
+        # Log metric using pl_module.log so other callbacks can access it
+        pl_module.log("val/bin", bin_metric, prog_bar=True, on_step=False, on_epoch=True)
+        self.metrics_history.append((trainer.current_epoch, bin_metric))
+        
+        print(f"Binarization metric at epoch {trainer.current_epoch}: {bin_metric:.4f}")
 
 
 def get_training_callbacks(cfg, checkpoint_dir):
-    """Create and return list of training callbacks.
+    """Create and return list of training callbacks from config.
 
     Args:
-        cfg: Configuration object
+        cfg: Configuration object with callbacks config
         checkpoint_dir: Directory to save checkpoints
 
     Returns:
         List of PyTorch Lightning callbacks
     """
+    from hydra.utils import instantiate
+    from omegaconf import OmegaConf
+    
     callbacks = []
-
-    # Model checkpoint callback
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=checkpoint_dir,
-        filename='checkpoint',
-        save_top_k=1,
-        monitor='val/loss',
-        mode='min'
-    )
-    callbacks.append(checkpoint_callback)
-
-    # Image generation callback
+    
+    # Get callbacks config
+    callbacks_cfg = cfg.callbacks
+    
+    # Set dynamic paths for callbacks that need them
     image_dir = checkpoint_dir / "samples"
-    generate_callback = GenerateImageCallback(
-        save_dir=image_dir,
-        every_n_epochs=cfg.callbacks.get('generate_image_every_n_epochs', 10)
-    )
-    callbacks.append(generate_callback)
-
-    # Early stopping callback
-    if cfg.callbacks.early_stopping.get('enabled', True):
-        early_stop_callback = EarlyStopping(
-            monitor=cfg.callbacks.early_stopping.monitor,
-            patience=cfg.callbacks.early_stopping.patience,
-            mode=cfg.callbacks.early_stopping.mode,
-            min_delta=cfg.callbacks.early_stopping.min_delta,
-            verbose=True
-        )
-        callbacks.append(early_stop_callback)
-
-    # Threshold stopping callback
-    if cfg.callbacks.threshold_stopping.get('enabled', False):
-        threshold_callback = ThresholdStopping(
-            monitor=cfg.callbacks.threshold_stopping.monitor,
-            threshold=cfg.callbacks.threshold_stopping.threshold,
-            mode=cfg.callbacks.threshold_stopping.mode,
-            verbose=True
-        )
-        callbacks.append(threshold_callback)
-
+    
+    # Instantiate each callback from config
+    for callback_name, callback_cfg in callbacks_cfg.items():
+        # Skip non-dict entries (like old-style config keys)
+        if not OmegaConf.is_dict(callback_cfg):
+            continue
+            
+        # Skip if no _target_ (not a callback definition)
+        if '_target_' not in callback_cfg:
+            continue
+        
+        # Add dynamic parameters based on callback type
+        if callback_name == 'model_checkpoint':
+            callback = instantiate(callback_cfg, dirpath=checkpoint_dir)
+        elif callback_name == 'generate_image':
+            callback = instantiate(callback_cfg, save_dir=image_dir)
+        elif callback_name == 'binarization_metric':
+            callback = instantiate(callback_cfg, save_dir=checkpoint_dir)
+        else:
+            callback = instantiate(callback_cfg)
+        
+        callbacks.append(callback)
+    
     return callbacks

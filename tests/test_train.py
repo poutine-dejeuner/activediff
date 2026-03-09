@@ -3,10 +3,9 @@ import torch
 import shutil
 from pathlib import Path
 import tempfile
-import yaml
-import pytest
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 from hydra.utils import get_class, instantiate
+from activediff.meep_compute_fom import compute_FOM_parallele
 
 
 def test_checkpoint_loading_with_get_class():
@@ -168,7 +167,6 @@ def test_active_learning():
     print("\nTest cleanup complete.")
 
 def test_meep_compute_fom():
-    from nanophoto.meep_compute_fom import compute_FOM_parallele
     imagespath = Path("/home/vincent/repos/photo/activediff/active_learning_output/iter_0/images/images.npy")
     images = np.load(imagespath)[:4]
     fom = compute_FOM_parallele(images[0])

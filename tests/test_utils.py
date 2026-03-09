@@ -3,7 +3,7 @@
 import pytest
 import torch
 import numpy as np
-from utils import compute_distances
+from activediff.utils import compute_distances
 
 
 class TestComputeDistances:

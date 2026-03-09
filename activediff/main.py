@@ -4,6 +4,7 @@ from collections import defaultdict
 import torch
 import pytorch_lightning as pl
 from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.tuner import Tuner
 
 import hydra
 from hydra.utils import instantiate
@@ -11,8 +12,8 @@ from omegaconf import OmegaConf, DictConfig, open_dict
 import wandb
 
 from activediff.datamodules import NanophotoDataModule
-from activediff.utils import compute_fom_scores, compute_distances, dist_select, fom_select
-from activediff.callbacks import get_training_callbacks
+from activediff.utils import compute_fom_scores, compute_distances, dist_select, fom_select, filter_similar_samples
+from activediff.callbacks import get_training_callbacks, binarisation
 
 
 def train_and_generate_samples(datamodule, logger, cfg, iteration):
@@ -62,6 +63,13 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
         cfg.trainer.max_epochs = max_epochs
     
     trainer = pl.Trainer(**dict(cfg.trainer), callbacks=callbacks, logger=logger)
+
+    # Auto-find batch size if enabled
+    if cfg.trainer.get('auto_scale_batch_size', False):
+        print("Finding optimal batch size...")
+        tuner = Tuner(trainer)
+        tuner.scale_batch_size(model, datamodule=datamodule, mode='binsearch')
+        print(f"Optimal batch size found: {datamodule.batch_size}")
 
     print(f"Training DDPM for up to {max_epochs} epochs...")
 
@@ -122,9 +130,10 @@ def main(cfg: DictConfig) -> None:
         distances = compute_distances(samples, datamodule.training_data)
         samples_after_dist = dist_select(samples, distances, distance_threshold)
 
-        # Step 3: Select samples based on FOM
+        # Step 3: Compute FOM scores and filter similar samples
         fom_scores = compute_fom_scores(samples_after_dist, cfg)
-        selected_samples = fom_select(samples_after_dist, fom_scores, fom_threshold)
+        samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
+        selected_samples = fom_select(samples_after_fom, fom_scores, fom_threshold)
 
         #TODO: start from previous model checkpoint
         #TODO: add patience for training loss and early stopping
@@ -137,12 +146,14 @@ def main(cfg: DictConfig) -> None:
                 'distance_mean': distances.mean().item(),
                 'distance_min': distances.min().item(),
                 'distance_max': distances.max().item(),
+                'binarization': binarisation(selected_samples),
             }
             if len(fom_scores) > 0:
                 metrics.update({
                     'fom_mean': fom_scores.mean().item(),
                     'fom_min': fom_scores.min().item(),
                     'fom_max': fom_scores.max().item(),
+                    'fom_std': fom_scores.std().item(),
                 })
             if len(selected_samples) > 0:
                 selected_indices = (fom_scores > fom_threshold).nonzero(as_tuple=True)[0]
