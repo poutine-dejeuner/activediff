@@ -45,9 +45,15 @@ class UNetPad():
     Returns the padded tensor and the slices to undo the padding.
     """
 
-    def __init__(self, sample: torch.Tensor, depth: int):
+    def __init__(self, depth: int, sample: torch.Tensor|None=None, shape: tuple[int,
+                 int]|None=None):
         self.depth = depth
-        h, w = sample.shape[-2:]
+        if sample is not None:
+            h, w = sample.shape[-2:]
+        elif shape is not None:
+            h, w = shape
+        else:
+            raise ValueError("Either sample or shape must be provided")
         target_h = ((h - 1) // 2**depth + 1) * 2**depth
         target_w = ((w - 1) // 2**depth + 1) * 2**depth
         pad_h = target_h - h

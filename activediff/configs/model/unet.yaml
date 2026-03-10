@@ -17,4 +17,3 @@ num_groups: 8  # Reduced from 32 for smaller channels
 dropout_prob: 0.1  # Add dropout for regularization
 num_heads: 4  # Reduced from 8
 time_steps: 1000
-image_shape: ${data.image_shape}  # Reference to data.image_shape

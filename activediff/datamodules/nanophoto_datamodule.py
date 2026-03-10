@@ -95,7 +95,7 @@ class NanophotoDataModule(pl.LightningDataModule):
         
         # Initialize padding function if not already done
         if self.pad_fn is None:
-            self.pad_fn = UNetPad(data, depth=self.unet_depth)
+            self.pad_fn = UNetPad(depth=self.unet_depth, sample=data)
             print(f"Initialized UNetPad with depth={self.unet_depth}, input shape={data.shape}")
         
         # Apply padding to all data

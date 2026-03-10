@@ -97,8 +97,23 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
     return samples
 
 
+def _compute_padded_image_shape(image_shape, unet_depth):
+    """Compute the padded image shape that is divisible by 2**unet_depth."""
+    padded = []
+    for dim in image_shape:
+        padded.append(((dim - 1) // 2**unet_depth + 1) * 2**unet_depth)
+    return padded
+
+
 @hydra.main(version_base="1.3", config_path="configs", config_name="config")
 def main(cfg: DictConfig) -> None:
+
+    # Compute padded image shape once and inject into config so all components
+    # (inference, etc.) can create correctly-sized tensors without manual padding.
+    with open_dict(cfg):
+        cfg.data.padded_image_shape = _compute_padded_image_shape(
+            cfg.data.image_shape, cfg.datamodule.unet_depth
+        )
 
     # Initialize wandb if enabled
     use_wandb = cfg.wandb.get('enabled', False) and not cfg.debug

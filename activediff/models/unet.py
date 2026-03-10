@@ -126,7 +126,6 @@ class UNet(pl.LightningModule):
                  time_steps: int = 1000,
                  lr: float = 1e-4,
                  ema_decay: float = 0.9999,
-                 image_shape: tuple = None,
                  **kwargs):
         super().__init__()
         self.save_hyperparameters()
@@ -164,7 +163,6 @@ class UNet(pl.LightningModule):
         self.lr = lr
         self.ema_decay = ema_decay
         self.time_steps = time_steps
-        self.image_shape = image_shape
         self.ema = None
         self.criterion = nn.MSELoss(reduction='mean')
         self.scheduler_ddpm = DDPM_Scheduler(num_time_steps=time_steps, device=device)
@@ -179,9 +177,6 @@ class UNet(pl.LightningModule):
             residuals.append(r)
         for i in range(self.num_layers//2, self.num_layers):
             layer = getattr(self, f'Layer{i+1}')
-            # a = layer(x, embeddings)[0]
-            # b = residuals[self.num_layers-i-1]
-            # breakpoint()
             x = torch.concat(
                 (layer(x, embeddings)[0], residuals[self.num_layers-i-1]), dim=1)
         return self.output_conv(self.relu(self.late_conv(x)))
@@ -274,7 +269,7 @@ def train(data: np.ndarray, cfg, checkpoint_path: os.PathLike, savedir: os.PathL
     model = model.to(device)
     depth = model.num_layers//2
 
-    pad_fn = UNetPad(data, depth=depth)
+    pad_fn = UNetPad(data[0:1], depth=depth)
 
     assert data.shape[-2:] == cfg.data.image_shape
 
@@ -339,6 +334,7 @@ def inference(cfg,
     n_images = cfg.active_learning.get('n_to_generate_debug', 2) if cfg.debug else cfg.active_learning.n_to_generate
     batch_size = cfg.generation.batch_size
     image_shape = tuple(cfg.data.image_shape)
+    padded_image_shape = tuple(cfg.data.padded_image_shape)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
@@ -378,8 +374,6 @@ def inference(cfg,
         ema.load_state_dict(ema_state)
     scheduler = DDPM_Scheduler(num_time_steps=num_time_steps, device=device)
     times = [0, 15, 50, 100, 200, 300, 400, 550, 700, 999]
-    z = torch.randn((1, 1,)+image_shape)
-    padding_fn = UNetPad(z, depth=model.num_layers//2)
 
     with torch.no_grad():
         all_samples = []
@@ -392,9 +386,8 @@ def inference(cfg,
             # Determine actual batch size for this iteration
             current_batch_size = min(batch_size, n_images - batch_idx * batch_size)
             
-            # Initialize batch of noise
-            z = torch.randn((current_batch_size, 1,) + image_shape, device=device)
-            z = padding_fn(z)
+            # Initialize batch of noise at padded size directly
+            z = torch.randn((current_batch_size, 1,) + padded_image_shape, device=device)
 
             # Reverse diffusion process for entire batch
             for t in reversed(range(1, num_time_steps)):
@@ -412,8 +405,8 @@ def inference(cfg,
                                       * (torch.sqrt(1-scheduler.beta[0])))
             x = (1/(torch.sqrt(1-scheduler.beta[0]))) * z - (temp * model(z, [0] * current_batch_size))
 
-            # Remove padding and collect samples
-            x = padding_fn.inverse(x)
+            # Crop back to original image shape and collect samples
+            x = x[..., :image_shape[0], :image_shape[1]]
             all_samples.append(x.cpu())
         
         # Concatenate all batches
@@ -430,7 +423,7 @@ def inference(cfg,
         
         samples = samples.numpy()
         samples = (samples - samples.min()) / (samples.max() - samples.min())
-        assert samples.shape == (n_images, 101, 91) or samples.shape == (101, 91), samples.shape
+        assert samples.shape == (n_images,) + image_shape, samples.shape
         np.save(savepath / "images.npy", samples)
 
     return samples
