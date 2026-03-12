@@ -2,12 +2,13 @@
 
 VM_NAME="ml-research-montreal"
 REGION="northamerica-northeast1"
-ZONES=("a" "b" "c")
+# ZONES=("a" "b" "c")
+ZONES=("c")
 
 # Configuration des paires (Machine, GPU, Image)
 # Le L4 est sur G2, le T4 est sur N1.
 CONFIGS=(
-    "g2-standard-4:nvidia-l4:ubuntu-accelerator-2404-amd64-with-nvidia-580-v20260225"
+    # "g2-standard-4:nvidia-l4:ubuntu-accelerator-2404-amd64-with-nvidia-580-v20260225"
     "n1-standard-4:nvidia-tesla-t4:ubuntu-accelerator-2404-amd64-with-nvidia-580-v20260225"
 )
 

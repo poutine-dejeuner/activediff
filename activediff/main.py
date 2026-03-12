@@ -1,5 +1,6 @@
 from typing import Any
 from collections import defaultdict
+from pathlib import Path
 
 import torch
 import pytorch_lightning as pl
@@ -138,8 +139,39 @@ def main(cfg: DictConfig) -> None:
         print(f"# ITERATION {iteration + 1}/{max_iterations}")
 
         # Step 1: Train DDPM model and generate samples
-        samples = train_and_generate_samples(
-            datamodule, logger, cfg, iteration)
+        skip_initial = cfg.active_learning.get('skip_initial_training', False)
+        if iteration == 0 and skip_initial:
+            # Skip training, just generate from existing checkpoint
+            checkpoint_dir = datamodule.output_dir / f"iter_{iteration}"
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            images_dir = checkpoint_dir / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use load_ckpt_path if provided, otherwise look in iter_0
+            load_ckpt_path = cfg.active_learning.get('load_ckpt_path', None)
+            if load_ckpt_path:
+                checkpoint_path = load_ckpt_path
+            else:
+                checkpoint_path = checkpoint_dir / "checkpoint.ckpt"
+            
+            if not Path(checkpoint_path).exists():
+                raise FileNotFoundError(
+                    f"skip_initial_training=true but no checkpoint at {checkpoint_path}"
+                )
+            
+            print(f"Skipping initial training, generating from {checkpoint_path}")
+            inference = instantiate(cfg.model.inference)
+            samples = inference(
+                cfg=cfg,
+                checkpoint_path=checkpoint_path,
+                savepath=images_dir,
+                meep_eval=False
+            )
+            dtype = getattr(torch, cfg.dtype)
+            samples = torch.from_numpy(samples).to(dtype=dtype)
+        else:
+            samples = train_and_generate_samples(
+                datamodule, logger, cfg, iteration)
 
         # Step 2: Select samples based on distance
         distances = compute_distances(samples, datamodule.training_data)

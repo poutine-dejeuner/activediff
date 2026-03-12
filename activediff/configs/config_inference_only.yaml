@@ -15,15 +15,17 @@ data:
   image_shape: [101, 91]
 
 active_learning:
+  # Configuration pour générer et sélectionner sans training
   fom_threshold: 0.48
   distance_threshold: 10
   n_to_generate: 1000
-  n_to_generate_debug: 2  # Used when debug=true
-  max_iterations: 10
-  max_iterations_debug: 2  # Used when debug=true
-  resume_training: true
-  skip_initial_training: false  # Skip iteration 0 training, load from existing checkpoint
-
+  n_to_generate_debug: 2
+  max_iterations: 1
+  max_iterations_debug: 1
+  resume_training: false
+  skip_initial_training: true  # CLEF: Sauter l'entraînement
+  load_ckpt_path: "results_bak/iter_2/checkpoint.pt"  # Chemin du checkpoint à charger
+  
 generation:
   batch_size: 32
 
@@ -32,12 +34,12 @@ fom:
   skip_meep: false
 
 wandb:
-  enabled: true
+  enabled: false
   project: activediff
   entity: nanophoto
-  name: active-diffusion
-  tags: []
-  notes: null
+  name: inference-only
+  tags: [inference]
+  notes: "Inference et sélection uniquement, sans training"
 
 use_mixed_precision: true
 gradient_accumulation_steps: 2
@@ -49,4 +51,3 @@ train:
   lr: 0.0001
   num_time_steps: 1000
   ema_decay: 0.9999
-

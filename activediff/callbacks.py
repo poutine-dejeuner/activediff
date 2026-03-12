@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 from pathlib import Path
 from activediff.utils import binarisation
+from activediff.models.unet_utils import UNetPad
 
 
 class ThresholdStopping(pl.Callback):
@@ -53,13 +54,16 @@ class GenerateImageCallback(pl.Callback):
     Args:
         save_dir: Directory to save images
         every_n_epochs: Generate image every N epochs (default: 10)
+        unet_depth: Depth of UNet for padding calculation
     """
 
-    def __init__(self, save_dir: Path, every_n_epochs: int = 10):
+    def __init__(self, save_dir: Path, every_n_epochs: int = 10, unet_depth: int = 3):
         super().__init__()
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.every_n_epochs = every_n_epochs
+        self.unet_depth = unet_depth
+        self.pad_fn = None
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Generate and save image using full reverse diffusion."""
@@ -77,14 +81,19 @@ class GenerateImageCallback(pl.Callback):
         pl_module.eval()
 
         with torch.no_grad():
-            # Start from random noise
-            image_shape = getattr(pl_module, 'image_shape')
-            z = torch.randn(1, 1, *image_shape, device=pl_module.device)
-
-            # Apply padding if model has it
-            pad_fn = getattr(pl_module, 'pad_fn', None)
-            if pad_fn is not None:
-                z = pad_fn(z)
+            # Get image shape and compute padded shape
+            image_shape = tuple(getattr(pl_module, 'image_shape'))
+            
+            # Initialize padding function if needed
+            if self.pad_fn is None:
+                self.pad_fn = UNetPad(depth=self.unet_depth, shape=image_shape)
+            
+            # Compute padded shape
+            padded_h = image_shape[0] + self.pad_fn.pad[3]
+            padded_w = image_shape[1] + self.pad_fn.pad[1]
+            
+            # Start from random noise at padded size
+            z = torch.randn(1, 1, padded_h, padded_w, device=pl_module.device)
 
             # Use EMA model if available
             ema = getattr(pl_module, 'ema', None)
@@ -111,9 +120,8 @@ class GenerateImageCallback(pl.Callback):
             temp = (beta_0 / (torch.sqrt(1 - alpha_0) * torch.sqrt(1 - beta_0)))
             x = (1 / torch.sqrt(1 - beta_0)) * z - (temp * model(z, [0]))
 
-            # Remove padding if applied
-            if pad_fn is not None and hasattr(pad_fn, 'unpad'):
-                x = pad_fn.unpad(x)
+            # Remove padding
+            x = self.pad_fn.inverse(x)
 
         pl_module.train()
 
@@ -134,14 +142,17 @@ class BinarizationMetricCallback(pl.Callback):
     Args:
         save_dir: Directory to save metrics
         every_n_epochs: Compute metric every N epochs (default: 10)
+        unet_depth: Depth of UNet for padding calculation
     """
 
-    def __init__(self, save_dir: Path = None, every_n_epochs: int = 10):
+    def __init__(self, save_dir: Path = None, every_n_epochs: int = 10, unet_depth: int = 3):
         super().__init__()
         self.save_dir = Path(save_dir) if save_dir else None
         self.every_n_epochs = every_n_epochs
+        self.unet_depth = unet_depth
         self.metrics_history = []
         self.initialized = False
+        self.pad_fn = None
 
     def on_train_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Initialize val/bin with a high value so EarlyStopping can monitor it."""
@@ -163,19 +174,24 @@ class BinarizationMetricCallback(pl.Callback):
         pl_module.eval()
 
         with torch.no_grad():
+            # Get image shape and compute padded shape
+            image_shape = tuple(getattr(pl_module, 'image_shape'))
+            
+            # Initialize padding function if needed
+            if self.pad_fn is None:
+                self.pad_fn = UNetPad(depth=self.unet_depth, shape=image_shape)
+            
+            # Compute padded shape
+            padded_h = image_shape[0] + self.pad_fn.pad[3]
+            padded_w = image_shape[1] + self.pad_fn.pad[1]
+            
             # Generate multiple samples to compute average binarization
             num_samples = 4
             samples = []
             
             for _ in range(num_samples):
-                # Start from random noise
-                image_shape = getattr(pl_module, 'image_shape')
-                z = torch.randn(1, 1, *image_shape, device=pl_module.device)
-
-                # Apply padding if model has it
-                pad_fn = getattr(pl_module, 'pad_fn', None)
-                if pad_fn is not None:
-                    z = pad_fn(z)
+                # Start from random noise at padded size
+                z = torch.randn(1, 1, padded_h, padded_w, device=pl_module.device)
 
                 # Use EMA model if available
                 ema = getattr(pl_module, 'ema', None)
@@ -202,9 +218,8 @@ class BinarizationMetricCallback(pl.Callback):
                 temp = (beta_0 / (torch.sqrt(1 - alpha_0) * torch.sqrt(1 - beta_0)))
                 x = (1 / torch.sqrt(1 - beta_0)) * z - (temp * model(z, [0]))
 
-                # Remove padding if applied
-                if pad_fn is not None and hasattr(pad_fn, 'unpad'):
-                    x = pad_fn.unpad(x)
+                # Remove padding
+                x = self.pad_fn.inverse(x)
 
                 samples.append(x)
 

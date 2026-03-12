@@ -124,6 +124,7 @@ class UNet(pl.LightningModule):
                  output_channels: int = 1,
                  device: device = 'cuda',
                  time_steps: int = 1000,
+                 image_shape: List | None = None,
                  lr: float = 1e-4,
                  ema_decay: float = 0.9999,
                  **kwargs):
@@ -163,6 +164,7 @@ class UNet(pl.LightningModule):
         self.lr = lr
         self.ema_decay = ema_decay
         self.time_steps = time_steps
+        self.image_shape = list(image_shape) if image_shape is not None else None
         self.ema = None
         self.criterion = nn.MSELoss(reduction='mean')
         self.scheduler_ddpm = DDPM_Scheduler(num_time_steps=time_steps, device=device)

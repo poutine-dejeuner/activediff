@@ -6,11 +6,11 @@ import multiprocessing
 from tqdm import tqdm
 from omegaconf import OmegaConf
 
-def binarisation(images: torch.Tensor) -> float:
+def binarisation(images: torch.Tensor) -> torch.Tensor:
     """Computes the average binarisation of a batch of images. The
-    binatization ioff an image is the mean of the min of {z, 1-z} for each
-    pixel, where z is the pixel value in [0, 1]."""
-    min_values = torch.min(images, 1 - images)
+    binarization of an image is the mean of min(abs(z), abs(1-z)) for each
+    pixel, where z is the pixel value."""
+    min_values = torch.min(torch.abs(images), torch.abs(1 - images))
     binarisation_scores = min_values.mean(dim=[1, 2])
     return binarisation_scores
 
@@ -75,7 +75,7 @@ def filter_similar_samples(samples, fom_scores, distance_threshold):
     keep_mask = torch.ones(len(samples), dtype=torch.bool)
     
     # Iterate through sorted samples
-    for i, idx_i in enumerate(sorted_indices):
+    for _, idx_i in enumerate(sorted_indices):
         if not keep_mask[idx_i]:
             continue
             
@@ -184,4 +184,4 @@ def set_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
-    random.seed(seed)
+    # random.seed(seed)
