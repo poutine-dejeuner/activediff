@@ -62,6 +62,11 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
                   len(datamodule.train_dataloader().dataset))
     with open_dict(cfg):
         cfg.trainer.max_epochs = max_epochs
+        # 16-mixed si le GPU a des tensor cores (compute capability >= 7.0)
+        if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
+            cfg.trainer.precision = "16-mixed"
+        else:
+            cfg.trainer.precision = 32
     
     trainer = pl.Trainer(**dict(cfg.trainer), callbacks=callbacks, logger=logger)
 
