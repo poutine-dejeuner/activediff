@@ -127,6 +127,7 @@ class UNet(pl.LightningModule):
                  image_shape: List | None = None,
                  lr: float = 1e-4,
                  ema_decay: float = 0.9999,
+                 ema_update_every: int = 10,
                  **kwargs):
         super().__init__()
         self.save_hyperparameters()
@@ -163,6 +164,7 @@ class UNet(pl.LightningModule):
         # Training parameters
         self.lr = lr
         self.ema_decay = ema_decay
+        self.ema_update_every = ema_update_every
         self.time_steps = time_steps
         self.image_shape = list(image_shape) if image_shape is not None else None
         self.ema = None
@@ -197,7 +199,8 @@ class UNet(pl.LightningModule):
         # Predict noise
         output = self(x_noisy, t)
         loss = self.criterion(output, e)
-        self.ema.update(self)
+        if self.global_step % self.ema_update_every == 0:
+            self.ema.update(self)
 
         self.log('train/loss', loss, prog_bar=False, on_step=True, on_epoch=True)
         return loss

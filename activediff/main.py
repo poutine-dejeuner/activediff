@@ -54,6 +54,11 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
         model = instantiate(cfg.model)
     model = model.to(dtype=dtype)
 
+    # Compile model for faster training
+    if cfg.get('compile_model', False) and hasattr(torch, 'compile'):
+        print("Compiling model with torch.compile...")
+        model = torch.compile(model)
+
     # Setup callbacks
     callbacks = get_training_callbacks(cfg, checkpoint_dir)
 

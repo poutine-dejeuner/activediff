@@ -118,7 +118,11 @@ class NanophotoDataModule(pl.LightningDataModule):
             self._train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=self.num_workers > 0,
+            prefetch_factor=2 if self.num_workers > 0 else None,
+            drop_last=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -127,7 +131,9 @@ class NanophotoDataModule(pl.LightningDataModule):
             self._val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=self.num_workers > 0,
         )
 
     @property

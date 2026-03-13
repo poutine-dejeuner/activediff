@@ -7,9 +7,9 @@ output_dir: active_learning_output
 output_file: new_images.npy
 
 # DataLoader parameters
-batch_size: 32
+batch_size: 128
 val_split: 0.1
-num_workers: 4
+num_workers: 2
 
 # UNet padding depth (num_layers // 2)
 unet_depth: 3

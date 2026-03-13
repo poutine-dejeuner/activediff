@@ -40,7 +40,7 @@ wandb:
   notes: null
 
 use_mixed_precision: true
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 1
 compile_model: true
 
 train:
