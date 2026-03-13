@@ -8,7 +8,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.tuner import Tuner
 
 import hydra
-from hydra.utils import instantiate
+from hydra.utils import instantiate, get_class
 from omegaconf import OmegaConf, DictConfig, open_dict
 import wandb
 
