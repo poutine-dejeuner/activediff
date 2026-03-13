@@ -144,13 +144,14 @@ def main(cfg: DictConfig) -> None:
     fom_threshold = cfg.active_learning.fom_threshold
     distance_threshold = cfg.active_learning.distance_threshold
     max_iterations = cfg.active_learning.max_iterations
+    start_iteration = datamodule.start_iteration
 
-    for iteration in range(max_iterations):
-        print(f"# ITERATION {iteration + 1}/{max_iterations}")
+    for iteration in range(start_iteration, start_iteration + max_iterations):
+        print(f"# ITERATION {iteration} (#{iteration - start_iteration + 1}/{max_iterations})")
 
         # Step 1: Train DDPM model and generate samples
         skip_initial = cfg.active_learning.get('skip_initial_training', False)
-        if iteration == 0 and skip_initial:
+        if iteration == start_iteration and skip_initial:
             # Skip training, just generate from existing checkpoint
             checkpoint_dir = datamodule.output_dir / f"iter_{iteration}"
             checkpoint_dir.mkdir(parents=True, exist_ok=True)

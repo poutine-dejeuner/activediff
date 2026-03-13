@@ -59,6 +59,7 @@ class NanophotoDataModule(pl.LightningDataModule):
         self._train_dataset: Optional[torch.utils.data.Dataset] = None
         self._val_dataset: Optional[torch.utils.data.Dataset] = None
         self.pad_fn: Optional[UNetPad] = None
+        self.start_iteration: int = 0  # Next iteration to run
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load initial training data from disk and restore previous state if available."""
@@ -78,7 +79,8 @@ class NanophotoDataModule(pl.LightningDataModule):
         # Try to load checkpoint
         last_iteration = self.load_checkpoint()
         if last_iteration is not None:
-            print(f"Resuming from iteration {last_iteration}")
+            self.start_iteration = last_iteration + 1
+            print(f"Resuming from iteration {self.start_iteration}")
 
         # Prepare datasets for training
         self.prepare_data_splits()
