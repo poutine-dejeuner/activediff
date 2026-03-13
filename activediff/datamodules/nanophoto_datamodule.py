@@ -183,6 +183,11 @@ class NanophotoDataModule(pl.LightningDataModule):
     def load_checkpoint(self) -> Optional[int]:
         """Load the latest checkpoint if it exists.
 
+        Looks for:
+        1. checkpoint_iter_*.pt in output_dir
+        2. selected_samples_iter_*.pt in output_dir
+        3. iter_*/checkpoint.ckpt in output_dir subdirectories
+
         Returns:
             Last completed iteration number, or None if no checkpoint exists
         """
@@ -190,9 +195,12 @@ class NanophotoDataModule(pl.LightningDataModule):
         checkpoint_files = sorted(self.output_dir.glob("checkpoint_iter_*.pt"))
 
         if not checkpoint_files:
-            print("No checkpoint files found")
-            # Even without checkpoint, try to load individual selected samples
-            selected_files = sorted(self.output_dir.glob("selected_samples_iter_*.pt"))
+            print("No checkpoint_iter_*.pt files found")
+            # Try to load individual selected samples (output_dir and iter_*/ subdirs)
+            selected_files = sorted(
+                list(self.output_dir.glob("selected_samples_iter_*.pt"))
+                + list(self.output_dir.glob("iter_*/selected_samples_iter_*.pt"))
+            )
             if selected_files:
                 print(f"Found {len(selected_files)} selected sample files without checkpoint")
                 for i, selected_path in enumerate(selected_files):
@@ -205,7 +213,15 @@ class NanophotoDataModule(pl.LightningDataModule):
                 if self._new_samples:
                     total_samples = sum(len(s) for s in self._new_samples)
                     print(f"Restored {len(self._new_samples)} iterations with {total_samples} total new samples")
-                return len(selected_files) - 1
+                return len(selected_files) - 1 if selected_files else None
+
+            # Fallback: look for iter_*/checkpoint.ckpt
+            iter_dirs = sorted(self.output_dir.glob("iter_*/checkpoint.ckpt"))
+            if iter_dirs:
+                last_iter = len(iter_dirs) - 1
+                print(f"Found {len(iter_dirs)} iteration checkpoint(s) in iter_*/ subdirectories")
+                return last_iter
+
             return None
 
         latest_checkpoint = checkpoint_files[-1]
@@ -218,6 +234,8 @@ class NanophotoDataModule(pl.LightningDataModule):
 
         for i in range(iteration + 1):
             selected_path = self.output_dir / f"selected_samples_iter_{i}.pt"
+            if not selected_path.exists():
+                selected_path = self.output_dir / f"iter_{i}" / f"selected_samples_iter_{i}.pt"
             if selected_path.exists():
                 selected = torch.load(selected_path, weights_only=False)
                 selected = selected.to(dtype=self.dtype)
