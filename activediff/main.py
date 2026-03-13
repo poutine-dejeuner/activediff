@@ -186,11 +186,20 @@ def main(cfg: DictConfig) -> None:
         # Step 2: Select samples based on distance
         distances = compute_distances(samples, datamodule.training_data)
         samples_after_dist = dist_select(samples, distances, distance_threshold)
+        if use_wandb:
+            metrics = {
+                'distance_mean': distances.mean().item(),
+                'distance_min': distances.min().item(),
+                'distance_max': distances.max().item(),
+                'binarization': binarisation(samples),
+            }
 
         # Step 3: Compute FOM scores and filter similar samples
         fom_scores = compute_fom_scores(samples_after_dist, cfg)
         samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
-        selected_samples = fom_select(samples_after_fom, fom_scores, fom_threshold)
+        selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
+        selected_dist = compute_distances(selected_samples,
+                                      datamodule.training_data)
 
         #TODO: start from previous model checkpoint
         #TODO: add patience for training loss and early stopping
@@ -198,25 +207,26 @@ def main(cfg: DictConfig) -> None:
         #diffusion implicit model
 
         # Log metrics to wandb
-        if use_wandb:
-            metrics = {
-                'distance_mean': distances.mean().item(),
-                'distance_min': distances.min().item(),
-                'distance_max': distances.max().item(),
-                'binarization': binarisation(selected_samples),
-            }
-            if len(fom_scores) > 0:
-                metrics.update({
-                    'fom_mean': fom_scores.mean().item(),
-                    'fom_min': fom_scores.min().item(),
-                    'fom_max': fom_scores.max().item(),
-                    'fom_std': fom_scores.std().item(),
-                })
+        if use_wandb and len(fom_scores) > 0:
+            metrics.update({
+                'fom_mean': fom_scores.mean().item(),
+                'fom_min': fom_scores.min().item(),
+                'fom_max': fom_scores.max().item(),
+                'fom_std': fom_scores.std().item(),
+            })
             if len(selected_samples) > 0:
                 selected_indices = (fom_scores > fom_threshold).nonzero(as_tuple=True)[0]
                 if len(selected_indices) > 0:
                     metrics.update({
-                        'selected_fom_mean': fom_scores[selected_indices].mean().item(),
+                        'selected_fom_mean': selected_fom.mean().item(),
+                        'selected_fom_std': selected_fom.std().item(),
+                        'selected_fom_min': selected_fom.min().item(),
+                        'selected_fom_max': selected_fom.max().item(),
+                        'selected_dist_mean': selected_dist.mean().item(),
+                        'selected_fom_std': selected_dist.std().item(),
+                        'selected_fom_min': selected_dist.min().item(),
+                        'selected_fom_max': selected_dist.max().item(),
+
                     })
             wandb.log(metrics)
 
@@ -224,6 +234,8 @@ def main(cfg: DictConfig) -> None:
         if len(selected_samples) > 0:
             selected_samples_path = datamodule.output_dir / f"selected_samples_iter_{iteration}.pt"
             torch.save(selected_samples, selected_samples_path)
+            selected_fom_scores_path = datamodule.output_dir / f"selected_fom_scores_iter_{iteration}.pt"
+            torch.save(selected_fom_scores, selected_fom_scores_path)
             print(f"Saved {len(selected_samples)} selected samples to {selected_samples_path}")
 
         # Step 5: Update training data

@@ -80,9 +80,6 @@ class NanophotoDataModule(pl.LightningDataModule):
         if last_iteration is not None:
             print(f"Resuming from iteration {last_iteration}")
 
-        # Try to load and merge saved samples
-        self.load_and_merge_saved_samples()
-
         # Prepare datasets for training
         self.prepare_data_splits()
 
@@ -232,31 +229,6 @@ class NanophotoDataModule(pl.LightningDataModule):
                   f"{checkpoint['n_new_samples']} total new samples")
 
         return iteration
-
-    def load_and_merge_saved_samples(self) -> None:
-        """Load saved new_images.npy and merge into initial data."""
-        new_images_path = self.output_dir / self.output_file
-
-        if not new_images_path.exists():
-            print(f"No saved samples found at {new_images_path}")
-            return
-
-        print(f"Found saved samples: {new_images_path}")
-        new_images = np.load(new_images_path)
-        new_images_tensor = torch.from_numpy(new_images).to(dtype=self.dtype)
-
-        print(f"Initial data shape: {self._initial_training_data.shape}")
-        print(f"New images shape: {new_images_tensor.shape}")
-
-        # Merge into initial data
-        self._initial_training_data = torch.cat(
-            [self._initial_training_data, new_images_tensor], dim=0
-        )
-
-        # Clear new_samples since they're now part of initial data
-        self._new_samples = []
-
-        print(f"Merged new images into initial data. New shape: {self._initial_training_data.shape}")
 
     def save_checkpoint(self, iteration: int) -> None:
         """Save checkpoint with current state.

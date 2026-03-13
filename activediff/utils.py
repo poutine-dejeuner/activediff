@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import torch
 from torch import cdist
@@ -49,7 +50,7 @@ def dist_select(samples, distances, distance_threshold):
     return selected_samples
 
 
-def filter_similar_samples(samples, fom_scores, distance_threshold):
+def filter_similar_samples(samples: torch.tensor, fom_scores:torch.Tensor| np.ndarray, distance_threshold:float):
     """Filter samples by keeping only the best FOM for similar samples.
     
     Args:
@@ -60,6 +61,8 @@ def filter_similar_samples(samples, fom_scores, distance_threshold):
     Returns:
         Filtered samples and their FOM scores
     """
+    if isinstance(fom_scores, np.ndarray):
+        fom_scores = torch.from_numpy(fom_scores)
     print(f"\nFiltering similar samples with distance threshold {distance_threshold}...")
     
     # Flatten samples for distance computation
@@ -113,7 +116,7 @@ def fom_select(samples, fom_scores, fom_threshold):
     if len(selected_samples) > 0:
         print(f"Selected samples - FOM mean: {selected_fom.mean():.4f}")
 
-    return selected_samples
+    return selected_samples, selected_fom
 
 
 def compute_FOM_parallele_safe(samples_np):
@@ -185,3 +188,37 @@ def set_seed(seed: int = 42):
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     # random.seed(seed)
+
+
+def fom_dist_select(imagespath, fom_threshold=0.48, dist_threshold=10):
+    import activediff
+
+    imagesdir = imagespath.parent
+    training_data_path = Path(activediff.__file__).parent.parent / "data/imagesnorm.npy"
+    
+    training_data = torch.from_numpy(np.load(training_data_path))
+
+    samples = torch.from_numpy(np.load(imagespath))
+    distances = compute_distances(samples.to(float), training_data.to(float))
+    samples_after_dist = dist_select(samples, distances, dist_threshold)
+
+    fompath = imagesdir / "fom.npy"
+    if fompath.exists():
+        fom_scores = torch.from_numpy(np.load(fompath))
+    else:
+        fom_scores = compute_FOM_parallele_safe(samples_after_dist)
+        np.save(fompath, fom_scores)
+
+    fom_scores = np.array(fom_scores)
+    samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, dist_threshold)
+    selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
+    selected_dist = compute_distances(selected_samples.to(float), training_data.to(float))
+    imagesdir = Path(imagespath).parent
+    np.save(imagesdir / 'selected_images.npy', selected_samples)
+    np.save(imagesdir / 'selecded_fom.npy', selected_fom)
+    print(selected_dist.mean())
+    print(selected_fom.mean())
+
+if __name__ == "__main__":
+    imagespath = Path("active_learning_output/iter_0/images/images.npy")
+    fom_dist_select(imagespath)

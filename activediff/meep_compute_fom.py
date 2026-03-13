@@ -2,6 +2,7 @@ import os
 from tqdm import tqdm
 import timeit
 import multiprocessing
+from pathlib import Path
 
 import meep as mp
 import meep.adjoint as mpa
@@ -57,7 +58,10 @@ def mirror_upper_y_half(x):
 
 
 def double_with_mirror(image):
-    channels = '~/scratch/nanophoto/lowfom/nodata/fields/channels.npy'
+    import activediff
+
+    packagedir = Path(activediff.__file__).parent.parent
+    channels = packagedir / 'data/channels.npy'
     channels = np.load(os.path.expanduser(channels))
     mirrored_image = np.fliplr(image)  # Crée l'image miroir
     doubled_image = np.concatenate((mirrored_image[:, :-1], image), axis=1)
