@@ -46,3 +46,5 @@ Thumbs.db
 # Data
 results_bak/
 *.pt
+activediff/.schemas
+checkpoints/

@@ -50,4 +50,3 @@ threshold_stopping_bin:
 #   min_delta: 0.0001
 #   verbose: true
 #   stopping_threshold: 0.003
-

@@ -232,7 +232,20 @@ class UNet(pl.LightningModule):
         if self.ema is None:
             self.ema = ModelEmaV3(self, decay=self.ema_decay)
 
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=self.lr * 2,
+            total_steps=self.trainer.estimated_stepping_batches,
+            pct_start=0.1,
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }
 
     def on_save_checkpoint(self, checkpoint):
         # Save EMA state

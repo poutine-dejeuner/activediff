@@ -41,7 +41,7 @@ wandb:
 
 use_mixed_precision: true
 gradient_accumulation_steps: 1
-compile_model: true
+compile_model: false
 
 train:
   n_compute_steps: 5_000_000
@@ -49,4 +49,3 @@ train:
   lr: 0.0001
   num_time_steps: 1000
   ema_decay: 0.9999
-
