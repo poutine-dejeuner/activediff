@@ -18,7 +18,14 @@ from activediff.callbacks import get_training_callbacks, binarisation
 
 
 def train_and_generate_samples(datamodule, logger, cfg, iteration):
-    """Train DDPM model and generate samples using PyTorch Lightning."""
+    """Train DDPM model and generate samples using PyTorch Lightning.
+    
+    Args:
+        datamodule: Data module with training data
+        logger: WandbLogger instance (will prefix metrics with iter_{iteration}/train/)
+        cfg: Configuration
+        iteration: Active learning iteration number
+    """
     output_dir = datamodule.output_dir
 
     print(f"Active Learning Iteration {iteration}: Training DDPM model and generating samples")
@@ -74,6 +81,12 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
             cfg.trainer.precision = 32
     
     trainer = pl.Trainer(**dict(cfg.trainer), callbacks=callbacks, logger=logger)
+    
+    # Set logger prefix for training metrics if using wandb
+    if logger is not None and isinstance(logger, WandbLogger):
+        logger.experiment.define_metric("global_step", step_metric="trainer/global_step")
+        # Store iteration in logger for metric prefixing
+        logger._iteration = iteration
 
     # Auto-find batch size if enabled
     if cfg.trainer.get('auto_scale_batch_size', False):

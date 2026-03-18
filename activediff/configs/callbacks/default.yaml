@@ -15,10 +15,17 @@ binarization_metric:
   every_n_epochs: 100
   unet_depth: ${datamodule.unet_depth}
 
-threshold_stopping:
+threshold_stopping_loss:
   _target_: activediff.callbacks.ThresholdStopping
-  monitor: val/loss
+  monitor: train/loss
   threshold: 0.0003
+  mode: min
+  verbose: true
+
+threshold_stopping_bin:
+  _target_: activediff.callbacks.ThresholdStopping
+  monitor: val/bin
+  threshold: 0.003
   mode: min
   verbose: true
 
