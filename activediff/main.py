@@ -198,6 +198,7 @@ def main(cfg: DictConfig) -> None:
                 datamodule, logger, cfg, iteration)
 
         # Step 2: Select samples based on distance
+        assert samples.shape[0] > 0, "No samples generated"
         distances = compute_distances(samples, datamodule.training_data)
         samples_after_dist = dist_select(samples, distances, distance_threshold)
         if use_wandb:
@@ -212,6 +213,7 @@ def main(cfg: DictConfig) -> None:
         fom_scores = compute_fom_scores(samples_after_dist, cfg)
         samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
         selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
+        assert selected_samples.shape[0] > 0, "No samples generated"
         selected_dist = compute_distances(selected_samples,
                                       datamodule.training_data)
 
