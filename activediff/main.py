@@ -79,6 +79,12 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
             cfg.trainer.precision = "16-mixed"
         else:
             cfg.trainer.precision = 32
+        
+        # Add DDP strategy if multiple GPUs are available
+        num_gpus = torch.cuda.device_count()
+        if num_gpus > 1:
+            cfg.trainer.strategy = "ddp"
+            print(f"Multiple GPUs detected ({num_gpus}). Using DDP strategy.")
     
     trainer = pl.Trainer(**dict(cfg.trainer), callbacks=callbacks, logger=logger)
     
@@ -153,6 +159,18 @@ def main(cfg: DictConfig) -> None:
     datamodule: NanophotoDataModule = instantiate(cfg.datamodule)
     datamodule.setup()
     print(datamodule)
+
+    # Load pre-selected generated images from a previous run
+    gen_images_path = cfg.active_learning.get('gen_images_path', None)
+    if gen_images_path is not None:
+        gen_images_path = Path(gen_images_path)
+        if not gen_images_path.exists():
+            print(f"Warning: gen_images_path={gen_images_path} does not exist, skipping")
+        else:
+            dtype = getattr(torch, cfg.dtype)
+            gen_images = torch.load(gen_images_path, weights_only=False).to(dtype=dtype)
+            print(f"Loaded {len(gen_images)} pre-selected generated images from {gen_images_path}")
+            datamodule.add_samples(gen_images)
 
     fom_threshold = cfg.active_learning.fom_threshold
     distance_threshold = cfg.active_learning.distance_threshold

@@ -21,8 +21,9 @@ active_learning:
   n_to_generate_debug: 2  # Used when debug=true
   max_iterations: 10
   max_iterations_debug: 2  # Used when debug=true
-  resume_training: true
+  resume_training: false
   skip_initial_training: false  # Skip iteration 0 training, load from existing checkpoint
+  gen_images_path: data/selected_gen_images.pt # Path to .pt file with pre-selected generated images from a previous run
 
 generation:
   batch_size: 32
