@@ -7,7 +7,7 @@ output_dir: active_learning_output
 output_file: new_images.npy
 
 # DataLoader parameters
-batch_size: 128
+batch_size: 32
 val_split: 0.1
 num_workers: 2
 

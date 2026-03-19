@@ -39,7 +39,7 @@ wandb:
   tags: []
   notes: null
 
-use_mixed_precision: true
+use_mixed_precision: false
 gradient_accumulation_steps: 1
 compile_model: false
 
@@ -49,3 +49,4 @@ train:
   lr: 0.0001
   num_time_steps: 1000
   ema_decay: 0.9999
+  ema_update_every: 1
