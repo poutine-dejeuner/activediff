@@ -77,10 +77,10 @@ class NanophotoDataModule(pl.LightningDataModule):
         print(f"Loaded initial training data: {self._initial_training_data.shape}")
 
         # Try to load checkpoint
-        last_iteration = self.load_checkpoint()
-        if last_iteration is not None:
-            self.start_iteration = last_iteration + 1
-            print(f"Resuming from iteration {self.start_iteration}")
+        # last_iteration = self.load_checkpoint()
+        # if last_iteration is not None:
+        #     self.start_iteration = last_iteration + 1
+        #     print(f"Resuming from iteration {self.start_iteration}")
 
         # Prepare datasets for training
         self.prepare_data_splits()

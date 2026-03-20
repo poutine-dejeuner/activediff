@@ -76,7 +76,9 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
         cfg.trainer.max_epochs = max_epochs
         # 16-mixed si le GPU a des tensor cores (compute capability >= 7.0)
         if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 7:
-            cfg.trainer.precision = "16-mixed"
+            # cfg.trainer.precision = "16-mixed"
+            cfg.trainer.precision = 32
+            torch.set_float32_matmul_precision('high')
         else:
             cfg.trainer.precision = 32
         
@@ -269,7 +271,7 @@ def main(cfg: DictConfig) -> None:
             selected_samples_path = datamodule.output_dir / f"selected_samples_iter_{iteration}.pt"
             torch.save(selected_samples, selected_samples_path)
             selected_fom_scores_path = datamodule.output_dir / f"selected_fom_scores_iter_{iteration}.pt"
-            torch.save(selected_fom_scores, selected_fom_scores_path)
+            torch.save(selected_fom, selected_fom_scores_path)
             print(f"Saved {len(selected_samples)} selected samples to {selected_samples_path}")
 
         # Step 5: Update training data
