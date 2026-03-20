@@ -61,8 +61,8 @@ def double_with_mirror(image):
     import activediff
 
     packagedir = Path(activediff.__file__).parent.parent
-    channels = packagedir / 'data/channels.npy'
-    channels = np.load(os.path.expanduser(channels))
+    # channels = packagedir / 'data/channels.npy'
+    # channels = np.load(os.path.expanduser(channels))
     mirrored_image = np.fliplr(image)  # Crée l'image miroir
     doubled_image = np.concatenate((mirrored_image[:, :-1], image), axis=1)
     return doubled_image

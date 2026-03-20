@@ -15,38 +15,25 @@ binarization_metric:
   every_n_epochs: 100
   unet_depth: ${datamodule.unet_depth}
 
-threshold_stopping_loss:
-  _target_: activediff.callbacks.ThresholdStopping
+loss_early_stopping:
+  _target_: pytorch_lightning.callbacks.EarlyStopping
   monitor: train/loss
-  threshold: 0.0003
+  patience: 1000
   mode: min
+  min_delta: 0.00001
   verbose: true
+  stopping_threshold: 0.0003
 
-threshold_stopping_bin:
-  _target_: activediff.callbacks.ThresholdStopping
+binarization_early_stopping:
+  _target_: pytorch_lightning.callbacks.EarlyStopping
   monitor: val/bin
-  threshold: 0.003
+  patience: 1000
   mode: min
+  min_delta: 0.0001
   verbose: true
+  stopping_threshold: 0.003
 
 # batch_size_finder:
 #   _target_: lightning.pytorch.callbacks.BatchSizeFinder
 #   steps_per_trial: 50
 #   max_val: 256
-
-# early_stopping:
-#   _target_: pytorch_lightning.callbacks.EarlyStopping
-#   monitor: val/loss
-#   patience: 500
-#   mode: min
-#   min_delta: 0.00001
-#   verbose: true
-
-# binarization_early_stopping:
-#   _target_: pytorch_lightning.callbacks.EarlyStopping
-#   monitor: val/bin
-#   patience: 50
-#   mode: min
-#   min_delta: 0.0001
-#   verbose: true
-#   stopping_threshold: 0.003
