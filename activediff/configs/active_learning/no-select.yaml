@@ -1,0 +1,12 @@
+distance_selection: false
+fom_selection: true
+fom_threshold: 0.48
+distance_threshold: 10
+n_to_generate: 1000
+n_to_generate_debug: 2  # Used when debug=true
+max_iterations: 10
+max_iterations_debug: 2  # Used when debug=true
+checkpoint: active_learning_output/iter_0/checkpoint.ckpt
+resume_training: false
+skip_initial_training: false  # Skip iteration 0 training, load from existing checkpoint
+gen_images_path: data/selected_gen_images.pt # Path to .pt file with pre-selected generated images from a previous run

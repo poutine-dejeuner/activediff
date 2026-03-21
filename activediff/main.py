@@ -50,6 +50,8 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
             prev_checkpoint_path = None
         else:
             print(f"Resuming training from previous checkpoint: {prev_checkpoint_path}")
+    if cfg.active_learning.checkpoint is not None:
+        prev_checkpoint_path = cfg.active_learning.checkpoint
 
     # Initialize model
     dtype = getattr(torch, cfg.dtype)
