@@ -15,6 +15,8 @@ data:
   image_shape: [101, 91]
 
 active_learning:
+  distance_selection: true
+  fom_selection: true
   fom_threshold: 0.48
   distance_threshold: 10
   n_to_generate: 1000

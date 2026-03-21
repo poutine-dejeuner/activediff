@@ -11,31 +11,27 @@ def evaluate(images: np.ndarray, savepath: Path = Path("."), fom: np.ndarray | N
     return results
 
 if __name__ == "__main__":
-    base = Path("active_learning_output/")
-    path0 = base / "selected_samples_iter_0.pt"
-    images0 = torch.load(path0).cpu().numpy()
-    path1 = base / "selected_samples_iter_1.pt"
-    images = np.concatenate([images0, torch.load(path1).cpu().numpy()], axis=0)
-    ic(images.shape)
-    np.save(base / "new_images.npy", images)
+    base = Path(".")
 
-    savepath = base / "eval_results"
+    # Recursively find all selected samples
+    sample_files = sorted(base.glob("**/selected_samples_iter_*.pt"))
+
+    if not sample_files:
+        print(f"No selected_samples_iter_*.pt found in {base.resolve()}")
+        exit(1)
+
+    all_images = []
+    for f in sample_files:
+        samples = torch.load(f, weights_only=False).cpu().numpy()
+        print(f"{f}: {samples.shape[0]} samples")
+        all_images.append(samples)
+
+    images = np.concatenate(all_images, axis=0)
+    ic(images.shape)
+    np.save("new_images.npy", images)
+
+    savepath = Path("eval_results")
     savepath.mkdir(parents=True, exist_ok=True)
     evaluate(images=images, savepath=savepath)
-
-
-    # import argparse
-    # from pathlib import Path
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--file", type=str, required=True)
-    # parser.add_argument("--savepath", type=str, default=".")
-    # args = parser.parse_args()
-    # path = Path(args.file)
-    # if path.suffix == ".npy":
-    #     images = np.load(path)
-    # elif path.suffix == ".pt":
-    #     images = torch.load(path).cpu().numpy()
-    #
-    # evaluate(images=images, savepath=args.savepath)
 
 

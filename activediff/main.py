@@ -219,22 +219,29 @@ def main(cfg: DictConfig) -> None:
 
         # Step 2: Select samples based on distance
         assert samples.shape[0] > 0, "No samples generated"
-        distances = compute_distances(samples, datamodule.training_data)
-        samples_after_dist = dist_select(samples, distances, distance_threshold)
-        if use_wandb:
-            metrics = {
-                'distance_mean': distances.mean().item(),
-                'distance_min': distances.min().item(),
-                'distance_max': distances.max().item(),
-                'binarization': binarisation(samples),
-            }
+        if cfg.active_learning.distance_selection:
+            distances = compute_distances(samples, datamodule.training_data)
+            samples_after_dist = dist_select(samples, distances, distance_threshold)
+            if use_wandb:
+                metrics = {
+                    'distance_mean': distances.mean().item(),
+                    'distance_min': distances.min().item(),
+                    'distance_max': distances.max().item(),
+                    'binarization': binarisation(samples),
+                }
+        else:
+            samples_after_dist = samples
 
         # Step 3: Compute FOM scores and filter similar samples
         fom_scores = compute_fom_scores(samples_after_dist, cfg)
         samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
-        selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
+        if cfg.active_learning.fom_selection:
+            selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
+        else:
+            selected_samples, selected_fom = samples_after_fom, fom_scores
         assert selected_samples.shape[0] > 0, "No samples generated"
-        selected_dist = compute_distances(selected_samples,
+        if cfg.active_learning.distance_selection:
+            selected_dist = compute_distances(selected_samples,
                                       datamodule.training_data)
 
         #TODO: start from previous model checkpoint
