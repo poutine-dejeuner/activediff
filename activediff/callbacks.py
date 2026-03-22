@@ -8,31 +8,6 @@ from activediff.utils import binarisation
 from activediff.models.unet_utils import UNetPad
 
 
-class WarmupEarlyStopping(EarlyStopping):
-    """EarlyStopping that ignores the first `warmup_epochs` epochs.
-
-    Useful when resuming from a converged checkpoint with new data:
-    the model needs time to adapt before early stopping should kick in.
-    """
-
-    def __init__(self, warmup_epochs: int = 0, **kwargs):
-        super().__init__(**kwargs)
-        self.warmup_epochs = warmup_epochs
-
-    def _should_skip(self, trainer: pl.Trainer) -> bool:
-        return trainer.current_epoch < self.warmup_epochs
-
-    def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
-        if self._should_skip(trainer):
-            return
-        super().on_validation_end(trainer, pl_module)
-
-    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
-        if self._should_skip(trainer):
-            return
-        super().on_train_epoch_end(trainer, pl_module)
-
-
 class ThresholdStopping(pl.Callback):
     """Stop training when a monitored metric reaches a threshold value.
 
@@ -70,6 +45,71 @@ class ThresholdStopping(pl.Callback):
         elif self.mode == 'max' and current_value >= self.threshold:
             if self.verbose:
                 print(f"\nThreshold reached! {self.monitor}={current_value:.6f} >= {self.threshold}")
+            trainer.should_stop = True
+
+
+class MultiThresholdStopping(pl.Callback):
+    """Stop training only when ALL monitored metrics satisfy their thresholds.
+
+    Args:
+        conditions: List of dicts with 'monitor', 'threshold', and 'mode' ('min'/'max').
+        warmup_epochs: Number of epochs to skip before allowing stopping.
+        verbose: Whether to print messages.
+
+    Example Hydra config::
+
+        multi_threshold_stopping:
+          _target_: activediff.callbacks.MultiThresholdStopping
+          conditions:
+            - monitor: val/loss
+              threshold: 0.0003
+              mode: min
+            - monitor: val/bin
+              threshold: 0.003
+              mode: min
+    """
+
+    def __init__(self, conditions: list[dict], warmup_epochs: int = 0, verbose: bool = True):
+        super().__init__()
+        for c in conditions:
+            if c.get('mode', 'min') not in ('min', 'max'):
+                raise ValueError(f"mode must be 'min' or 'max', got {c['mode']}")
+        self.conditions = conditions
+        self.warmup_epochs = warmup_epochs
+        self.verbose = verbose
+
+    def _check(self, value: float, threshold: float, mode: str) -> bool:
+        return value <= threshold if mode == 'min' else value >= threshold
+
+    def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        if trainer.current_epoch < self.warmup_epochs:
+            return
+
+        logs = trainer.callback_metrics
+        all_met = True
+        parts = []
+
+        for c in self.conditions:
+            monitor = c['monitor']
+            threshold = c['threshold']
+            mode = c.get('mode', 'min')
+            current = logs.get(monitor)
+
+            if current is None:
+                all_met = False
+                parts.append(f"{monitor}=N/A")
+                continue
+
+            val = current.item() if hasattr(current, 'item') else current
+            met = self._check(val, threshold, mode)
+            op = '<=' if mode == 'min' else '>='
+            parts.append(f"{monitor}={val:.6f} {op} {threshold} {'✓' if met else '✗'}")
+            if not met:
+                all_met = False
+
+        if all_met:
+            if self.verbose:
+                print(f"\nAll thresholds reached! {', '.join(parts)}")
             trainer.should_stop = True
 
 

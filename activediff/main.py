@@ -1,11 +1,9 @@
-from typing import Any
-from collections import defaultdict
 from pathlib import Path
 
 import torch
 import pytorch_lightning as pl
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.tuner import Tuner
+from lightning.pytorch.tuner.tuning import Tuner
 
 import hydra
 from hydra.utils import instantiate, get_class
@@ -221,16 +219,17 @@ def main(cfg: DictConfig) -> None:
 
         # Step 2: Select samples based on distance
         assert samples.shape[0] > 0, "No samples generated"
+        metrics = {}
         if cfg.active_learning.distance_selection:
             distances = compute_distances(samples, datamodule.training_data)
             samples_after_dist = dist_select(samples, distances, distance_threshold)
             if use_wandb:
-                metrics = {
+                metrics.update({
                     'distance_mean': distances.mean().item(),
                     'distance_min': distances.min().item(),
                     'distance_max': distances.max().item(),
                     'binarization': binarisation(samples),
-                }
+                })
         else:
             samples_after_dist = samples
 
@@ -242,14 +241,7 @@ def main(cfg: DictConfig) -> None:
         else:
             selected_samples, selected_fom = samples_after_fom, fom_scores
         assert selected_samples.shape[0] > 0, "No samples generated"
-        if cfg.active_learning.distance_selection:
-            selected_dist = compute_distances(selected_samples,
-                                      datamodule.training_data)
-
-        #TODO: start from previous model checkpoint
-        #TODO: add patience for training loss and early stopping
-        #TODO: if the above is not enough, replace the ddpm by denoising
-        #diffusion implicit model
+        selected_dist = compute_distances(selected_samples, datamodule.training_data)
 
         # Log metrics to wandb
         if use_wandb and len(fom_scores) > 0:
@@ -271,8 +263,7 @@ def main(cfg: DictConfig) -> None:
                         'selected_fom_std': selected_dist.std().item(),
                         'selected_fom_min': selected_dist.min().item(),
                         'selected_fom_max': selected_dist.max().item(),
-
-                    })
+                                    })
             wandb.log(metrics)
 
         # Save selected samples
