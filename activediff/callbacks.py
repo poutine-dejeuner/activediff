@@ -8,6 +8,31 @@ from activediff.utils import binarisation
 from activediff.models.unet_utils import UNetPad
 
 
+class WarmupEarlyStopping(EarlyStopping):
+    """EarlyStopping that ignores the first `warmup_epochs` epochs.
+
+    Useful when resuming from a converged checkpoint with new data:
+    the model needs time to adapt before early stopping should kick in.
+    """
+
+    def __init__(self, warmup_epochs: int = 0, **kwargs):
+        super().__init__(**kwargs)
+        self.warmup_epochs = warmup_epochs
+
+    def _should_skip(self, trainer: pl.Trainer) -> bool:
+        return trainer.current_epoch < self.warmup_epochs
+
+    def on_validation_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        if self._should_skip(trainer):
+            return
+        super().on_validation_end(trainer, pl_module)
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        if self._should_skip(trainer):
+            return
+        super().on_train_epoch_end(trainer, pl_module)
+
+
 class ThresholdStopping(pl.Callback):
     """Stop training when a monitored metric reaches a threshold value.
 
