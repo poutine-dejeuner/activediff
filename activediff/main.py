@@ -143,10 +143,8 @@ def main(cfg: DictConfig) -> None:
     # Compute padded image shape once and inject into config so all components
     # (inference, etc.) can create correctly-sized tensors without manual padding.
     with open_dict(cfg):
-        cfg.data.padded_image_shape = _compute_padded_image_shape(
-            cfg.data.image_shape, cfg.datamodule.unet_depth
-        )
-
+        padded_shape = _compute_padded_image_shape( cfg.data.image_shape, cfg.datamodule.unet_depth)
+        cfg.data.padded_image_shape = padded_shape
     # Initialize wandb if enabled
     use_wandb = cfg.wandb.get('enabled', False) and not cfg.debug
     logger = None
@@ -235,7 +233,8 @@ def main(cfg: DictConfig) -> None:
 
         # Step 3: Compute FOM scores and filter similar samples
         fom_scores = compute_fom_scores(samples_after_dist, cfg)
-        samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
+        if cfg.active_learning.distance_selection:
+            samples_after_fom, fom_scores = filter_similar_samples(samples_after_dist, fom_scores, distance_threshold)
         if cfg.active_learning.fom_selection:
             selected_samples, selected_fom = fom_select(samples_after_fom, fom_scores, fom_threshold)
         else:

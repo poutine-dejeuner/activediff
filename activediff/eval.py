@@ -13,16 +13,26 @@ def evaluate(images: np.ndarray, savepath: Path = Path("."), fom: np.ndarray | N
 if __name__ == "__main__":
     base = Path(".")
 
-    # Recursively find all selected samples
-    sample_files = sorted(base.glob("**/selected_samples_iter_*.pt"))
+    # Recursively find all selected samples (.pt ou .npy, priorité .pt)
+    pt_files = sorted(base.glob("**/selected_samples_iter_*.pt"))
+    npy_files = sorted(base.glob("**/selected_samples_iter_*.npy"))
 
-    if not sample_files:
-        print(f"No selected_samples_iter_*.pt found in {base.resolve()}")
+    if pt_files:
+        sample_files = pt_files
+        filetype = '.pt'
+    elif npy_files:
+        sample_files = npy_files
+        filetype = '.npy'
+    else:
+        print(f"No selected_samples_iter_*.pt or .npy found in {base.resolve()}")
         exit(1)
 
     all_images = []
     for f in sample_files:
-        samples = torch.load(f, weights_only=False).cpu().numpy()
+        if filetype == '.pt':
+            samples = torch.load(f, weights_only=False).cpu().numpy()
+        else:
+            samples = np.load(f)
         print(f"{f}: {samples.shape[0]} samples")
         all_images.append(samples)
 

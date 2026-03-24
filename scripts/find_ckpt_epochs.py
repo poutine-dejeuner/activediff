@@ -1,12 +1,14 @@
+from pathlib import Path
+import glob
 import argparse
 import os
+
 from pytorch_lightning import LightningModule
 
 def find_ckpt_files(directory):
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.endswith('.ckpt'):
-                yield os.path.join(root, file)
+    files = glob.glob(directory + '*checkpoint*')
+    print(files)
+    return files
 
 def print_epoch_from_ckpt(ckpt_path):
     model = LightningModule.load_from_checkpoint(ckpt_path)
@@ -15,7 +17,7 @@ def print_epoch_from_ckpt(ckpt_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Find .ckpt files and print their epoch")
-    parser.add_argument('--directory', type=str, default='.',
+    parser.add_argument('-d', '--directory', type=str, default='.',
                         help='Directory to search for .ckpt files')
     args = parser.parse_args()
     directory = args.directory

@@ -357,36 +357,37 @@ def inference(cfg,
     device = torch.device(device)
 
     print("INFERENCE")
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    # checkpoint = torch.load(checkpoint_path, weights_only=False)
     
-    # Handle both Lightning checkpoints (.ckpt) and custom checkpoints (.pt)
-    if 'state_dict' in checkpoint:
-        # Lightning checkpoint format
-        state_dict = checkpoint['state_dict']
-        
-        # Filter out EMA keys (they're saved in the checkpoint separately)
-        model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith('ema.')}
-        
-        # Try to extract EMA state if it exists
-        ema_state = checkpoint.get('ema')
-        if ema_state is None:
-            # EMA might be embedded in state_dict with 'ema.' prefix
-            ema_keys = {k.replace('ema.', ''): v for k, v in state_dict.items() if k.startswith('ema.')}
-            ema_state = ema_keys if ema_keys else None
-            
-    elif 'weights' in checkpoint:
-        # Custom checkpoint format
-        model_state_dict = checkpoint['weights']
-        ema_state = checkpoint.get('ema')
-    else:
-        # Direct state dict
-        model_state_dict = checkpoint
-        ema_state = None
-
-    model = hydra.utils.instantiate(cfg.model)
+    # # Handle both Lightning checkpoints (.ckpt) and custom checkpoints (.pt)
+    # if 'state_dict' in checkpoint:
+    #     # Lightning checkpoint format
+    #     state_dict = checkpoint['state_dict']
+    #
+    #     # Filter out EMA keys (they're saved in the checkpoint separately)
+    #     model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith('ema.')}
+    #
+    #     # Try to extract EMA state if it exists
+    #     ema_state = checkpoint.get('ema')
+    #     if ema_state is None:
+    #         # EMA might be embedded in state_dict with 'ema.' prefix
+    #         ema_keys = {k.replace('ema.', ''): v for k, v in state_dict.items() if k.startswith('ema.')}
+    #         ema_state = ema_keys if ema_keys else None
+    #
+    # elif 'weights' in checkpoint:
+    #     # Custom checkpoint format
+    #     model_state_dict = checkpoint['weights']
+    #     ema_state = checkpoint.get('ema')
+    # else:
+    #     # Direct state dict
+    #     model_state_dict = checkpoint
+    #     ema_state = None
+    #
+    # model = hydra.utils.instantiate(cfg.model)
+    model = UNet.load_from_checkpoint(checkpoint_path, strict=False)
     model = model.to(device)
 
-    model.load_state_dict(model_state_dict)
+    # model.load_state_dict(model_state_dict)
     ema = ModelEmaV3(model, decay=ema_decay)
     if ema_state is not None:
         ema.load_state_dict(ema_state)

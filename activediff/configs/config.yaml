@@ -14,6 +14,7 @@ dtype: float32
 
 data:
   image_shape: [101, 91]
+  padded_image_shape: [104, 96]
 
 
 generation:
