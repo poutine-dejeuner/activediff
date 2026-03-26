@@ -4,8 +4,10 @@ fom_threshold: 0.48
 distance_threshold: 10
 n_to_generate: 1000
 n_to_generate_debug: 2  # Used when debug=true
-max_iterations: 10
+max_iterations: 1
 max_iterations_debug: 2  # Used when debug=true
+hot_start: true
+# checkpoint: checkpoints/checkpoint.ckpt
 checkpoint: null
 resume_training: false
 skip_initial_training: false  # Skip iteration 0 training, load from existing checkpoint

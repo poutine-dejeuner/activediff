@@ -1,27 +1,37 @@
 from pathlib import Path
-import os
+import argparse
 import numpy as np
 import torch
-from activediff.utils import compute_distances, dist_select, fom_select, filter_similar_samples
+import activediff
+from activediff.utils import compute_distances, dist_select, binarisation
 
-datapath = Path(os.environ['HOME']) / "drive_scratch/nanophoto/diffusion/train3/7121889"
-trainpath = Path(os.environ['HOME']) / "scratch/nanophoto/topoptim/fulloptim/images.npy"
-savepath = Path('output/no_iter_dist_select_baseline/iter_0')
+parser = argparse.ArgumentParser(description='No Iteration Baseline')
+parser.add_argument('directory', type=str, help='Directory containing the data', default='.')
+args = parser.parse_args()
+directory = args.directory
 
-images = torch.from_numpy(np.load(datapath / "images.npy")).to(torch.float)
-fom = torch.from_numpy(np.load(datapath / "fom.npy")).to(torch.float)
-training_data= torch.from_numpy(np.load(trainpath)).to(torch.float)
+fom = np.load(f'{directory}/fom.npy')
+fom = torch.from_numpy(fom).float()
+images = np.load(f'{directory}/images.npy')
+images = torch.from_numpy(images).float()
+train_set = np.load(Path(activediff.__file__).parent.parent / 'data/imagesnorm.npy')
+train_set = torch.from_numpy(train_set).float()
+binar = binarisation(images)
+print(binar.mean(), binar.min(), binar.max())
 
-# Compute distances between all samples
-distances = compute_distances(samples=images, training_data=training_data)
-dist_mask = distances > 10
-images = images[dist_mask]
-fom = fom[dist_mask]
-fom_mask = fom > 0.48
-images = images[fom_mask]
-fom = fom[fom_mask]
 
-os.makedirs(savepath, exist_ok=True)
-torch.save(images, savepath / "selected_samples_iter_0.pt")
-torch.save(fom, savepath / "selected_fom_scores_iter_0.pt")
+# fom select
+fom_idx = fom > 0.48
+fom = fom[fom_idx]
+images = images[fom_idx]
+
+# dist select
+distances = compute_distances(images, train_set)
+distance_mask = distances > 10
+images = images[distance_mask]
+distances = distances[distance_mask]
+fom = fom[distance_mask]
+
+torch.save(images, f'{directory}/selected_samples_iter_0.pt')
+torch.save(fom, f'{directory}/selected_fom_scores_iter_0.pt')
 

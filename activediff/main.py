@@ -54,8 +54,10 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
     # Initialize model
     dtype = getattr(torch, cfg.dtype)
     if prev_checkpoint_path is not None:
+        breakpoint()
         # Load from checkpoint using dynamic class loading
         model_class = get_class(cfg.model._target_)
+        print(f"Loading model from checkpoint {prev_checkpoint_path}")
         model = model_class.load_from_checkpoint(prev_checkpoint_path)
     else:
         model = instantiate(cfg.model)
@@ -182,35 +184,37 @@ def main(cfg: DictConfig) -> None:
 
         # Step 1: Train DDPM model and generate samples
         skip_initial = cfg.active_learning.get('skip_initial_training', False)
-        if iteration == start_iteration and skip_initial:
-            # Skip training, just generate from existing checkpoint
-            checkpoint_dir = datamodule.output_dir / f"iter_{iteration}"
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
-            images_dir = checkpoint_dir / "images"
-            images_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Use load_ckpt_path if provided, otherwise look in iter_0
-            load_ckpt_path = cfg.active_learning.get('load_ckpt_path', None)
-            if load_ckpt_path:
-                checkpoint_path = load_ckpt_path
-            else:
-                checkpoint_path = checkpoint_dir / "checkpoint.ckpt"
-            
-            if not Path(checkpoint_path).exists():
-                raise FileNotFoundError(
-                    f"skip_initial_training=true but no checkpoint at {checkpoint_path}"
-                )
-            
-            print(f"Skipping initial training, generating from {checkpoint_path}")
-            inference = instantiate(cfg.model.inference)
-            samples = inference(
-                cfg=cfg,
-                checkpoint_path=checkpoint_path,
-                savepath=images_dir,
-                meep_eval=False
-            )
-            dtype = getattr(torch, cfg.dtype)
-            samples = torch.from_numpy(samples).to(dtype=dtype)
+        # if iteration == start_iteration and skip_initial:
+        #     # Skip training, just generate from existing checkpoint
+        #     checkpoint_dir = datamodule.output_dir / f"iter_{iteration}"
+        #     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        #     images_dir = checkpoint_dir / "images"
+        #     images_dir.mkdir(parents=True, exist_ok=True)
+        #
+        #     # Use load_ckpt_path if provided, otherwise look in iter_0
+        #     load_ckpt_path = cfg.active_learning.get('load_ckpt_path', None)
+        #     if load_ckpt_path:
+        #         checkpoint_path = load_ckpt_path
+        #     else:
+        #         checkpoint_path = checkpoint_dir / "checkpoint.ckpt"
+        #
+        #     if not Path(checkpoint_path).exists():
+        #         raise FileNotFoundError(
+        #             f"skip_initial_training=true but no checkpoint at {checkpoint_path}"
+        #         )
+        #
+        #     print(f"Skipping initial training, generating from {checkpoint_path}")
+        #     inference = instantiate(cfg.model.inference)
+        #     samples = inference(
+        #         cfg=cfg,
+        #         checkpoint_path=checkpoint_path,
+        #         savepath=images_dir,
+        #         meep_eval=False
+        #     )
+        #     dtype = getattr(torch, cfg.dtype)
+        #     samples = torch.from_numpy(samples).to(dtype=dtype)
+        if False:
+            pass
         else:
             samples = train_and_generate_samples(
                 datamodule, logger, cfg, iteration)
