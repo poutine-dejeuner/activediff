@@ -64,6 +64,8 @@ def filter_similar_samples(samples: torch.tensor, fom_scores:torch.Tensor| np.nd
     if isinstance(fom_scores, np.ndarray):
         fom_scores = torch.from_numpy(fom_scores)
     print(f"\nFiltering similar samples with distance threshold {distance_threshold}...")
+    if samples.shape[0] <= 1:
+        return samples, fom_scores
     
     # Flatten samples for distance computation
     samples_flat = samples.reshape(len(samples), -1)

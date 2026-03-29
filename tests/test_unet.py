@@ -2,8 +2,9 @@ import pytest
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset
+from timm.utils.model_ema import ModelEmaV3
 
-from activediff.models.unet import UNet
+from activediff.models.unet import UNet, load_unet_from_checkpoint
 from activediff.models.unet_utils import compute_unet_channels
 
 
@@ -34,6 +35,12 @@ def _make_dummy_loader(n=32, image_size=(16, 16), batch_size=8):
 
 # ── Unit tests ───────────────────────────────────────────────────────────────
 
+class TestLoadUNetFromCheckpoint:
+    def test_load_unet_from_checkpoint(self):
+        checkpoint = 'checkpoints/checkpoint.ckpt'
+        model, ema = load_unet_from_checkpoint(checkpoint)
+        assert isinstance(model, UNet), "Loaded object is not a UNet instance"
+        assert isinstance(ema, ModelEmaV3), "Loaded object is not a UNet instance"
 
 class TestUNetForward:
     def test_output_shape(self):

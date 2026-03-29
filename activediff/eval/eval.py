@@ -28,6 +28,8 @@ for i in INDICES:
     folder = os.path.join(BASE_DIR, str(i))
     img_files = glob.glob(os.path.join(folder, "selected_samples_iter_*.pt"))
     fom_files = glob.glob(os.path.join(folder, "selected_samples_fom_iter_*.pt"))
+    if not fom_files:
+        fom_files = glob.glob(os.path.join(folder, "selected_fom_scores_iter_*.pt"))
     if not img_files:
         continue
     print(f"files found in {folder}")
@@ -92,6 +94,9 @@ for i in INDICES:
     # Load raw FOM values
     fom_files = glob.glob(os.path.join(BASE_DIR, str(i),
                                        "selected_samples_fom_iter_*.pt"))
+
+    if not fom_files:
+        fom_files = glob.glob(os.path.join(BASE_DIR, str(i), "selected_fom_scores_iter_*.pt"))
     fom_vals = torch.load(fom_files[0]).numpy()
     fom_data.append(fom_vals)
     # Load raw NN distances

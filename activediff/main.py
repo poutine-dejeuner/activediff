@@ -54,11 +54,12 @@ def train_and_generate_samples(datamodule, logger, cfg, iteration):
     # Initialize model
     dtype = getattr(torch, cfg.dtype)
     if prev_checkpoint_path is not None:
-        breakpoint()
         # Load from checkpoint using dynamic class loading
         model_class = get_class(cfg.model._target_)
         print(f"Loading model from checkpoint {prev_checkpoint_path}")
-        model = model_class.load_from_checkpoint(prev_checkpoint_path)
+        model = model_class.load_from_checkpoint(prev_checkpoint_path,
+                                                 weights_only=False,
+                                                 lr_scheduler=cfg.model.get('lr_scheduler', 'onecycle'))
     else:
         model = instantiate(cfg.model)
     model = model.to(dtype=dtype)

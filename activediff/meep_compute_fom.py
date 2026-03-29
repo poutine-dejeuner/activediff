@@ -104,7 +104,7 @@ def compute_FOM_and_gradient(image):
     return f0, backprop_gradient
 
 
-def compute_FOM_parallele(images, debug=False):
+def compute_FOM_parallele(images, debug=False)-> np.ndarray:
     """
         Input images are (101, 91) and are doubled to shape (101, 181) and
         normalized to have values in the range [0, 1] then meep simulates the

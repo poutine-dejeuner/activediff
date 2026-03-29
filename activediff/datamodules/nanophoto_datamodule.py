@@ -76,11 +76,8 @@ class NanophotoDataModule(pl.LightningDataModule):
 
         print(f"Loaded initial training data: {self._initial_training_data.shape}")
 
-        # Try to load checkpoint
-        # last_iteration = self.load_checkpoint()
-        # if last_iteration is not None:
-        #     self.start_iteration = last_iteration + 1
-        #     print(f"Resuming from iteration {self.start_iteration}")
+        # Load any previously selected samples into the training set
+        self._load_selected_samples()
 
         # Prepare datasets for training
         self.prepare_data_splits()
@@ -181,6 +178,24 @@ class NanophotoDataModule(pl.LightningDataModule):
 
         np.save(save_path, all_new_samples.numpy())
         print(f"Saved {len(all_new_samples)} new samples to: {save_path}")
+
+    def _load_selected_samples(self) -> None:
+        """Load previously saved selected_samples_iter_*.pt files into training data."""
+        selected_files = sorted(
+            list(self.output_dir.glob("selected_samples_iter_*.pt"))
+            + list(self.output_dir.glob("iter_*/selected_samples_iter_*.pt"))
+        )
+        if not selected_files:
+            return
+
+        for selected_path in selected_files:
+            selected = torch.load(selected_path, weights_only=False)
+            selected = selected.to(dtype=self.dtype)
+            self._new_samples.append(selected)
+            print(f"Loaded {len(selected)} selected samples from {selected_path}")
+
+        total = sum(len(s) for s in self._new_samples)
+        print(f"Restored {len(selected_files)} iteration(s) with {total} total selected samples")
 
     def load_checkpoint(self) -> Optional[int]:
         """Load the latest checkpoint if it exists.

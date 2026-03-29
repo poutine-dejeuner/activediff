@@ -7,8 +7,10 @@ Experiment on image generation for nanophotonics by active search with diffusion
 For num_epochs:
 1. Train a diffusion model on the training data.
 2. Generate new samples.
-3. Select samples that satisfy sample_distance_to_training_set > distance_threshold.
-4. Select samples that satisfy sample_fom > fom_threshold.
+3. Discard samples that satisfy sample_distance_to_training_set < distance_threshold.
+4. Discard samples that satisfy sample_fom < fom_threshold.
+5. For each pair of the remaining samples, discard one of the two samples if
+   sample_distance_to_each_other < distance_threshold.
 5. Add the selected samples to the training ser.
 
 The point of step 3 is to prevent the addition of new samples that are too similar to the initial training set to ensure a growing diversity in the data generation. After only 2 epochs, the process discovers samples that are 

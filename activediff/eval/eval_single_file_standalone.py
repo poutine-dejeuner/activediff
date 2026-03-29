@@ -560,7 +560,6 @@ def evaluate_model(images: np.ndarray, savepath: Path,
     savepath = Path(savepath)
     results = dict()
     results['n_samples'] = images.shape[0]
-    # breakpoint()
 
     stats_file_path = savepath / 'stats.yaml'
     existing_stats = {}

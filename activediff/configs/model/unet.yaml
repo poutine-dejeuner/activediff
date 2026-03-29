@@ -19,5 +19,6 @@ num_heads: 4  # Reduced from 8
 time_steps: 1000
 image_shape: ${data.image_shape}
 lr: ${train.lr}
+lr_scheduler: onecycle
 ema_decay: ${train.ema_decay}
 ema_update_every: ${train.ema_update_every}

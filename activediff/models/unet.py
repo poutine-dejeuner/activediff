@@ -5,6 +5,7 @@ from typing import List
 import random
 import math
 from tqdm import tqdm
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -126,6 +127,7 @@ class UNet(pl.LightningModule):
                  time_steps: int = 1000,
                  image_shape: List | None = None,
                  lr: float = 1e-4,
+                 lr_scheduler: str = 'onecycle',
                  ema_decay: float = 0.9999,
                  ema_update_every: int = 10,
                  **kwargs):
@@ -163,6 +165,7 @@ class UNet(pl.LightningModule):
 
         # Training parameters
         self.lr = lr
+        self.lr_scheduler = lr_scheduler
         self.ema_decay = ema_decay
         self.ema_update_every = ema_update_every
         self.time_steps = time_steps
@@ -232,12 +235,20 @@ class UNet(pl.LightningModule):
         if self.ema is None:
             self.ema = ModelEmaV3(self, decay=self.ema_decay)
 
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=self.lr * 2,
-            total_steps=self.trainer.estimated_stepping_batches,
-            pct_start=0.1,
-        )
+        total_steps = self.trainer.estimated_stepping_batches
+
+        if self.lr_scheduler == 'cosine':
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps,
+            )
+        else:
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.lr * 2,
+                total_steps=total_steps,
+                pct_start=0.1,
+            )
 
         return {
             "optimizer": optimizer,
@@ -340,13 +351,93 @@ def train(data: np.ndarray, cfg, checkpoint_path: os.PathLike, savedir: os.PathL
     # report_objective(loss.item(), 'loss')
     return total_loss
 
+def load_unet_from_checkpoint(checkpoint_path, ema_decay=0.9999,
+                              device='cuda'):
+    # load_from_checkpoint restores model weights and calls on_load_checkpoint,
+    # which already rebuilds and loads the EMA state into model.ema.
+    model = UNet.load_from_checkpoint(checkpoint_path, strict=False,
+                                      weights_only=False)
+    model = model.to(device)
+
+    ema = model.ema
+    if ema is None:
+        ema = ModelEmaV3(model, decay=ema_decay)
+    return model, ema
+
+def _sample_ddpm(model, scheduler, z, num_time_steps):
+    """DDPM reverse diffusion (T model evaluations)."""
+    batch_size = z.shape[0]
+    device = z.device
+
+    for t in reversed(range(1, num_time_steps)):
+        t_batch = [t] * batch_size
+        temp = (scheduler.beta[t] / ((torch.sqrt(1 - scheduler.alpha[t]))
+                                     * (torch.sqrt(1 - scheduler.beta[t]))))
+        z = (1 / (torch.sqrt(1 - scheduler.beta[t]))) * z - (temp * model(z, t_batch))
+        e = torch.randn_like(z, device=device)
+        z = z + (e * torch.sqrt(scheduler.beta[t]))
+
+    # Final step (t=0), no noise added
+    temp = scheduler.beta[0] / ((torch.sqrt(1 - scheduler.alpha[0]))
+                                * (torch.sqrt(1 - scheduler.beta[0])))
+    z = (1 / (torch.sqrt(1 - scheduler.beta[0]))) * z - (temp * model(z, [0] * batch_size))
+    return z
+
+
+def _sample_ddim(model, scheduler, z, num_time_steps, ddim_steps=50, eta=0.0):
+    """DDIM sampling (Song et al. 2020). Same trained model, fewer steps.
+
+    Args:
+        model: Noise prediction network ε_θ.
+        scheduler: DDPM_Scheduler (provides ᾱ_t = scheduler.alpha[t]).
+        z: Initial noise tensor (B, C, H, W).
+        num_time_steps: Total diffusion timesteps T the model was trained with.
+        ddim_steps: Number of denoising steps (≪ T).
+        eta: Stochasticity (0 = deterministic, 1 ≈ DDPM variance).
+    """
+    batch_size = z.shape[0]
+    device = z.device
+
+    # Strided timestep subsequence, e.g. [0, 20, 40, …, 980] for T=1000, S=50
+    step_size = num_time_steps // ddim_steps
+    seq = list(range(0, num_time_steps, step_size))
+
+    for i in reversed(range(len(seq))):
+        t = seq[i]
+        t_batch = [t] * batch_size
+        alpha_bar_t = scheduler.alpha[t]
+
+        if i > 0:
+            alpha_bar_prev = scheduler.alpha[seq[i - 1]]
+        else:
+            # Last step → target is clean image (ᾱ = 1)
+            alpha_bar_prev = torch.tensor(1.0, device=device)
+
+        eps = model(z, t_batch)
+
+        # Predict x_0
+        x0_pred = (z - torch.sqrt(1 - alpha_bar_t) * eps) / torch.sqrt(alpha_bar_t)
+
+        if i > 0:
+            sigma = eta * torch.sqrt(
+                (1 - alpha_bar_prev) / (1 - alpha_bar_t)
+                * (1 - alpha_bar_t / alpha_bar_prev)
+            )
+            dir_xt = torch.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
+            noise = torch.randn_like(z)
+            z = torch.sqrt(alpha_bar_prev) * x0_pred + dir_xt + sigma * noise
+        else:
+            z = x0_pred
+
+    return z
+
 
 def inference(cfg,
               checkpoint_path: str = None,
               savepath: str = "images",
               meep_eval: bool = True,
               **kwargs,
-              ):
+              )-> np.ndarray:
     num_time_steps = cfg.model.time_steps
     ema_decay = cfg.train.ema_decay
     n_images = cfg.active_learning.get('n_to_generate_debug', 2) if cfg.debug else cfg.active_learning.n_to_generate
@@ -356,93 +447,48 @@ def inference(cfg,
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
-    print("INFERENCE")
-    # checkpoint = torch.load(checkpoint_path, weights_only=False)
-    
-    # # Handle both Lightning checkpoints (.ckpt) and custom checkpoints (.pt)
-    # if 'state_dict' in checkpoint:
-    #     # Lightning checkpoint format
-    #     state_dict = checkpoint['state_dict']
-    #
-    #     # Filter out EMA keys (they're saved in the checkpoint separately)
-    #     model_state_dict = {k: v for k, v in state_dict.items() if not k.startswith('ema.')}
-    #
-    #     # Try to extract EMA state if it exists
-    #     ema_state = checkpoint.get('ema')
-    #     if ema_state is None:
-    #         # EMA might be embedded in state_dict with 'ema.' prefix
-    #         ema_keys = {k.replace('ema.', ''): v for k, v in state_dict.items() if k.startswith('ema.')}
-    #         ema_state = ema_keys if ema_keys else None
-    #
-    # elif 'weights' in checkpoint:
-    #     # Custom checkpoint format
-    #     model_state_dict = checkpoint['weights']
-    #     ema_state = checkpoint.get('ema')
-    # else:
-    #     # Direct state dict
-    #     model_state_dict = checkpoint
-    #     ema_state = None
-    #
-    # model = hydra.utils.instantiate(cfg.model)
-    model = UNet.load_from_checkpoint(checkpoint_path, strict=False)
-    model = model.to(device)
+    sampler = cfg.inference.get('sampler', 'ddpm')
+    ddim_steps = cfg.inference.get('ddim_steps', 50)
+    ddim_eta = cfg.inference.get('ddim_eta', 0.0)
 
-    # model.load_state_dict(model_state_dict)
-    ema = ModelEmaV3(model, decay=ema_decay)
-    if ema_state is not None:
-        ema.load_state_dict(ema_state)
+    print(f"INFERENCE (sampler={sampler}" +
+          (f", steps={ddim_steps}, eta={ddim_eta})" if sampler == 'ddim' else ")"))
+
+    model, ema = load_unet_from_checkpoint(checkpoint_path, ema_decay, device)
     scheduler = DDPM_Scheduler(num_time_steps=num_time_steps, device=device)
-    times = [0, 15, 50, 100, 200, 300, 400, 550, 700, 999]
 
     with torch.no_grad():
         all_samples = []
         model = ema.module.eval()
         
-        # Calculate number of batches
         num_batches = (n_images + batch_size - 1) // batch_size
         
         for batch_idx in tqdm(range(num_batches), desc="Generating samples", disable=not sys.stdout.isatty()):
-            # Determine actual batch size for this iteration
             current_batch_size = min(batch_size, n_images - batch_idx * batch_size)
-            
-            # Initialize batch of noise at padded size directly
             z = torch.randn((current_batch_size, 1,) + padded_image_shape, device=device)
 
-            # Reverse diffusion process for entire batch
-            for t in reversed(range(1, num_time_steps)):
-                t_batch = [t] * current_batch_size
-                temp = (scheduler.beta[t]/((torch.sqrt(1-scheduler.alpha[t]))
-                                           * (torch.sqrt(1-scheduler.beta[t]))))
-                z = (1/(torch.sqrt(1-scheduler.beta[t]))) * z - (temp * model(z, t_batch))
-                
-                # Add noise
-                e = torch.randn_like(z, device=device)
-                z = z + (e * torch.sqrt(scheduler.beta[t]))
-            
-            # Final denoising step (t=0)
-            temp = scheduler.beta[0]/((torch.sqrt(1-scheduler.alpha[0]))
-                                      * (torch.sqrt(1-scheduler.beta[0])))
-            x = (1/(torch.sqrt(1-scheduler.beta[0]))) * z - (temp * model(z, [0] * current_batch_size))
+            if sampler == 'ddim':
+                x = _sample_ddim(model, scheduler, z, num_time_steps,
+                                 ddim_steps=ddim_steps, eta=ddim_eta)
+            else:
+                x = _sample_ddpm(model, scheduler, z, num_time_steps)
 
-            # Crop back to original image shape and collect samples
             x = x[..., :image_shape[0], :image_shape[1]]
             all_samples.append(x.cpu())
         
-        # Concatenate all batches
         samples = torch.cat(all_samples, dim=0).squeeze(1)
         
-        # Save a visualization of the first sample
         if savepath and len(samples) > 0:
             x_vis = samples[0].numpy()
             plt.figure(figsize=(3, 3))
             plt.imshow(x_vis, cmap='gray')
             plt.axis('off')
-            plt.savefig(savepath / "generated_sample_0.png", bbox_inches='tight')
+            plt.savefig(Path(savepath) / "generated_sample_0.png", bbox_inches='tight')
             plt.close()
         
         samples = samples.numpy()
         samples = (samples - samples.min()) / (samples.max() - samples.min())
         assert samples.shape == (n_images,) + image_shape, samples.shape
-        np.save(savepath / "images.npy", samples)
+        np.save(Path(savepath )/ "images.npy", samples)
 
     return samples

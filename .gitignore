@@ -49,3 +49,4 @@ results_bak/
 activediff/.schemas
 checkpoints/
 baseline_output/
+tmp/
