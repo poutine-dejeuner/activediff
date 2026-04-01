@@ -18,14 +18,6 @@ def plot_channels():
     row_sums = is_channel.sum(axis=1)
     channel_rows = np.where(row_sums > 0)[0]
     row_gaps = np.where(np.diff(channel_rows) > 1)[0]
-    # top_channel_bottom = channel_rows[row_gaps[0]]
-    # bot_channels_top = channel_rows[row_gaps[0] + 1]
-    #
-    # # Bottom channels horizontal extent
-    # bot_region = is_channel[bot_channels_top:, :]
-    # bot_cols = np.where(bot_region.any(axis=0))[0]
-    # xmin = bot_cols[0]
-    # xmax = bot_cols[-1]
     top_channel_bottom = 44
     bot_channels_top = 190 - 45
     xmin = 12
@@ -47,8 +39,16 @@ def plot_channels():
                       linewidth=3, edgecolor='red', facecolor='none')
     ax.add_patch(rect)
 
-    # "Design Region" label
-    ax.text((xmin + xmax) / 2, (top_channel_bottom + bot_channels_top) / 2,
+    # Inner rectangle: same height, half the width, right edge aligned with outer
+    inner_width = (xmax - xmin + 1) / 2
+    inner_x = xmax + 0.5 - inner_width
+    inner_rect = Rectangle((inner_x, top_channel_bottom - 0.5),
+                            inner_width, bot_channels_top - top_channel_bottom + 1,
+                            linewidth=6, edgecolor='red', facecolor='none')
+    ax.add_patch(inner_rect)
+
+    # "Design Region" label centred in the inner rectangle
+    ax.text(inner_x + inner_width / 2, (top_channel_bottom + bot_channels_top) / 2,
             'Design\nRegion', color='red', fontsize=40, fontweight='bold',
             ha='center', va='center')
 
