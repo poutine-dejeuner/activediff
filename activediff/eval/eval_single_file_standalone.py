@@ -329,7 +329,7 @@ class CompareToTrainClosestImage(EvaluationFunction):
             gen_img = (gen_img - gen_img.min()) / (gen_img.max() - gen_img.min() + 1e-8)
             train_img = (train_img - train_img.min()) / (train_img.max() - train_img.min() + 1e-8)
             axes[0, j + 1].imshow(gen_img, vmin=0, vmax=1)
-            axes[0, j + 1].set_title(f'FOM: {fom[idx]:.3f}, Dist: {distances[idx]:.4f}')
+            axes[0, j + 1].set_title(f'FOM: {fom[idx]:.3f}, Dist: {distances[idx]:.4f}', fontsize=16)
             axes[0, j + 1].axis('off')
             axes[1, j + 1].imshow(train_img, vmin=0, vmax=1)
             axes[1, j + 1].axis('off')
@@ -402,7 +402,7 @@ class PlotFomHistogram(EvaluationFunction):
             return "No FOM values provided for histogram."
         plt.figure(figsize=(10, 6))
         plt.hist(fom, bins=100, range=[0.48, 0.5]) # , alpha=0.7
-        plt.title(f"FOM Histogram - {model_name}")
+        plt.title(f"FOM Histogram - {model_name}", fontsize=16)
         plt.xlabel("Figure of Merit")
         plt.ylabel("Frequency")
         plt.grid(True, alpha=0.3)
@@ -477,7 +477,7 @@ class NNDistanceTrainSet(EvaluationFunction):
         distances = tonumpy(torch.stack(distances))
         np.save(os.path.join(savepath, 'nn_distances.npy'), distances)
         plt.hist(distances, bins=100, density=True, label=model_name) # , alpha=0.5
-        plt.title('Nearest training set neighbor distances')
+        plt.title('Nearest training set neighbor distances', fontsize=16)
         plt.savefig(os.path.join(savepath, f'nn_distance_histogram.{file_format}'))
         plt.legend()
         plt.close()

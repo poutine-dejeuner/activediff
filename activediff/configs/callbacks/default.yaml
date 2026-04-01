@@ -20,10 +20,10 @@ multi_threshold_stopping:
   warmup_epochs: 500
   conditions:
     - monitor: val/loss
-      threshold: 0.0003
+      threshold: 0.01
       mode: min
     - monitor: val/bin
-      threshold: 0.003
+      threshold: 0.05
       mode: min
 
 # batch_size_finder:

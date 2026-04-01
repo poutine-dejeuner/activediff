@@ -50,3 +50,4 @@ activediff/.schemas
 checkpoints/
 baseline_output/
 tmp/
+*.pdf

@@ -460,9 +460,9 @@ def inference(cfg,
     with torch.no_grad():
         all_samples = []
         model = ema.module.eval()
-        
+
         num_batches = (n_images + batch_size - 1) // batch_size
-        
+
         for batch_idx in tqdm(range(num_batches), desc="Generating samples", disable=not sys.stdout.isatty()):
             current_batch_size = min(batch_size, n_images - batch_idx * batch_size)
             z = torch.randn((current_batch_size, 1,) + padded_image_shape, device=device)
@@ -475,9 +475,9 @@ def inference(cfg,
 
             x = x[..., :image_shape[0], :image_shape[1]]
             all_samples.append(x.cpu())
-        
+
         samples = torch.cat(all_samples, dim=0).squeeze(1)
-        
+
         if savepath and len(samples) > 0:
             x_vis = samples[0].numpy()
             plt.figure(figsize=(3, 3))
@@ -485,7 +485,7 @@ def inference(cfg,
             plt.axis('off')
             plt.savefig(Path(savepath) / "generated_sample_0.png", bbox_inches='tight')
             plt.close()
-        
+
         samples = samples.numpy()
         samples = (samples - samples.min()) / (samples.max() - samples.min())
         assert samples.shape == (n_images,) + image_shape, samples.shape

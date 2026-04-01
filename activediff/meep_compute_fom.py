@@ -58,9 +58,8 @@ def mirror_upper_y_half(x):
 
 
 def double_with_mirror(image):
-    import activediff
-
-    packagedir = Path(activediff.__file__).parent.parent
+    # import activediff
+    # packagedir = Path(activediff.__file__).parent.parent
     # channels = packagedir / 'data/channels.npy'
     # channels = np.load(os.path.expanduser(channels))
     mirrored_image = np.fliplr(image)  # Crée l'image miroir
@@ -125,7 +124,8 @@ def compute_FOM_parallele(images, debug=False)-> np.ndarray:
     images = [images[i] for i in range(images.shape[0])]
     if len(images) == 1:
         return compute_FOM(images[0])
-    with multiprocessing.Pool() as pool:
+    n_cpus = multiprocessing.cpu_count()
+    with multiprocessing.Pool(processes=n_cpus - 1) as pool:
         results = list(tqdm(pool.imap(compute_FOM, images)))
     foms = np.array(results)
     # TODO: implémnter un catch de plantage de Meep

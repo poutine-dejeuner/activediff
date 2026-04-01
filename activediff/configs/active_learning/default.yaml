@@ -6,6 +6,7 @@ n_to_generate: 1000
 n_to_generate_debug: 2  # Used when debug=true
 max_iterations: 3
 max_iterations_debug: 2  # Used when debug=true
+max_FOM_eval: 600
 hot_start: false
 # checkpoint: checkpoints/checkpoint.ckpt
 checkpoint: null

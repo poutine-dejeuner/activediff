@@ -13,47 +13,71 @@ import torch
 import matplotlib.pyplot as plt
 
 import activediff
-from activediff.utils import compute_distances, dist_select, binarisation
+from activediff.utils import compute_distances, dist_select, binarisation, filter_similar_samples
+
 from eval_single_file_standalone import eval_single_file
 
 
 BASE_DIR = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
-INDICES = range(20)
 distance_select = True
+
+# --- Font scale config (1.0 = matplotlib defaults) ---
+FONT_SCALE = 2.0
+
+_base = plt.rcParams["font.size"]
+plt.rcParams.update({
+    "font.size":         _base * FONT_SCALE,
+    "axes.titlesize":    _base * FONT_SCALE,
+    "axes.labelsize":    _base * FONT_SCALE,
+    "xtick.labelsize":   _base * FONT_SCALE,
+    "ytick.labelsize":   _base * FONT_SCALE,
+    "legend.fontsize":   _base * FONT_SCALE,
+    "figure.titlesize":  _base * FONT_SCALE,
+})
 
 all_images = []
 all_foms = []
 
-for i in INDICES:
-    folder = os.path.join(BASE_DIR, str(i))
-    img_files = glob.glob(os.path.join(folder, "selected_samples_iter_*.pt"))
-    fom_files = glob.glob(os.path.join(folder, "selected_samples_fom_iter_*.pt"))
+# Find all image files recursively under BASE_DIR, sorted for reproducibility
+# Exclude the "all/" aggregation directory
+img_files_all = sorted(
+    f for f in glob.glob(os.path.join(BASE_DIR, "**", "selected_samples_iter_*.pt"), recursive=True)
+    if Path(f).parent.name != "all"
+)
+
+for img_file in img_files_all:
+    folder = os.path.dirname(img_file)
+    # Extract iteration index from filename and save results in BASE_DIR/<i>/
+    stem = Path(img_file).stem  # e.g. "selected_samples_iter_0"
+    iter_idx = stem.split("_")[-1]
+    savepath = Path(BASE_DIR) / iter_idx
+    savepath.mkdir(exist_ok=True)
+    fom_files = glob.glob(os.path.join(folder, f"selected_samples_fom_iter_{iter_idx}.pt"))
     if not fom_files:
-        fom_files = glob.glob(os.path.join(folder, "selected_fom_scores_iter_*.pt"))
-    if not img_files:
-        continue
+        fom_files = glob.glob(os.path.join(folder, f"selected_fom_scores_iter_{iter_idx}.pt"))
     print(f"files found in {folder}")
-    imgs = torch.load(img_files[0]).numpy()
+    imgs = torch.load(img_file).numpy()
     if fom_files:
         print(f"  FOM file found: {fom_files[0]}")
-        foms = torch.load(fom_files[0]).numpy() if fom_files else None
+        foms = torch.load(fom_files[0]).numpy()
     else:
         foms = None
-    eval_single_file(images=imgs, savepath=Path(folder),
+    eval_single_file(images=imgs, savepath=savepath,
                      fom=foms, force_recompute=True)
 
     all_images.append(imgs)
-    print(f"  iter {i}: {imgs.shape[0]} images")
+    print(f"  iter {iter_idx}: {imgs.shape[0]} images")
     if fom_files:
         fom = torch.load(fom_files[0]).numpy()
         all_foms.append(fom)
-        assert fom.shape[0] == imgs.shape[0], f"FOM count {fom.shape[0]} does not match image count {imgs.shape[0]} in iter {i}"
+        assert fom.shape[0] == imgs.shape[0], f"FOM count {fom.shape[0]} does not match image count {imgs.shape[0]} in {folder}"
     
 
 all_images = np.concatenate(all_images)
 all_foms = np.concatenate(all_foms) if all_foms else None
 
 if distance_select:
+    init_n_images = all_images.shape[0]
     images = torch.from_numpy(all_images)
     fom = all_foms
     train_set = np.load(Path(activediff.__file__).parent.parent / 'data/imagesnorm.npy')
@@ -65,6 +89,9 @@ if distance_select:
     images = images[distance_mask]
     distances = distances[distance_mask]
     fom = fom[distance_mask]
+    images, fom = filter_similar_samples(images, fom,
+                                                  distance_threshold=10)
+    print(f"Filtering removed {init_n_images - images.shape[0]} similar samples: {images.shape[0]} images remain")
     all_images = images.numpy()
     all_foms = fom
 
@@ -85,18 +112,22 @@ nn_data = []
 pca_entropy_data = []
 valid_indices = []
 
-for i in INDICES:
+for i in sorted(set(
+    Path(f).stem.split("_")[-1]
+    for f in img_files_all
+), key=lambda x: int(x)):
     stats_path = os.path.join(BASE_DIR, str(i), "stats.yaml")
     if not os.path.exists(stats_path):
         continue
     with open(stats_path) as f:
         stats = yaml.safe_load(f)
-    # Load raw FOM values
-    fom_files = glob.glob(os.path.join(BASE_DIR, str(i),
-                                       "selected_samples_fom_iter_*.pt"))
-
+    # Load raw FOM values — match exact iter index
+    fom_files = glob.glob(os.path.join(BASE_DIR, f"selected_samples_fom_iter_{i}.pt"))
     if not fom_files:
-        fom_files = glob.glob(os.path.join(BASE_DIR, str(i), "selected_fom_scores_iter_*.pt"))
+        fom_files = glob.glob(os.path.join(BASE_DIR, f"selected_fom_scores_iter_{i}.pt"))
+    if not fom_files:
+        print(f"  WARNING: no FOM file found for iter {i}, skipping.")
+        continue
     fom_vals = torch.load(fom_files[0]).numpy()
     fom_data.append(fom_vals)
     # Load raw NN distances
@@ -159,34 +190,39 @@ print(f"Saved to {pca_entropy_path}")
 
 # Generated vs closest train (most distant across all indices)
 DEFAULT_TRAIN_SET_PATH = os.path.expanduser("~/scratch/nanophoto/topoptim/fulloptim/images.npy")
-if os.path.exists(DEFAULT_TRAIN_SET_PATH):
+if not os.path.exists(DEFAULT_TRAIN_SET_PATH):
+    print(f"WARNING: train set not found at {DEFAULT_TRAIN_SET_PATH}, skipping generated_vs_closest_train_all plot.")
+else:
     ts = np.load(DEFAULT_TRAIN_SET_PATH)
     ts = (ts - ts.min()) / (ts.max() - ts.min() + 1e-8)
     ts = ts.squeeze()
 
-    all_images = []
-    all_distances = []
-    all_foms = []
-    for i in valid_indices:
-        img_files = glob.glob(os.path.join(BASE_DIR, str(i), "selected_samples_iter_*.npy"))
-        fom_files = glob.glob(os.path.join(BASE_DIR, str(i), "selected_samples_fom_iter_*.npy"))
-        dist_path = os.path.join(BASE_DIR, str(i), "nn_distances.npy")
-        if not (img_files and os.path.exists(dist_path)):
+    all_images_plot = []
+    all_distances_plot = []
+    all_foms_plot = []
+    for img_file in img_files_all:
+        iter_idx = Path(img_file).stem.split("_")[-1]
+        dist_path = os.path.join(BASE_DIR, iter_idx, "nn_distances.npy")
+        fom_file_pt = glob.glob(os.path.join(os.path.dirname(img_file), f"selected_samples_fom_iter_{iter_idx}.pt"))
+        if not fom_file_pt:
+            fom_file_pt = glob.glob(os.path.join(os.path.dirname(img_file), f"selected_fom_scores_iter_{iter_idx}.pt"))
+        if not os.path.exists(dist_path):
+            print(f"  WARNING: nn_distances.npy not found for iter {iter_idx}, skipping.")
             continue
-        imgs = np.load(img_files[0]).squeeze()
+        imgs = torch.load(img_file).numpy().squeeze()
         dists = np.load(dist_path)
-        foms = np.load(fom_files[0]) if fom_files else np.zeros(len(imgs))
-        all_images.append(imgs)
-        all_distances.append(dists)
-        all_foms.append(foms)
+        foms = torch.load(fom_file_pt[0]).numpy() if fom_file_pt else np.zeros(len(imgs))
+        all_images_plot.append(imgs)
+        all_distances_plot.append(dists)
+        all_foms_plot.append(foms)
 
-    if all_images:
-        all_images = np.concatenate(all_images)
-        all_distances = np.concatenate(all_distances)
-        all_foms = np.concatenate(all_foms)
+    if all_images_plot:
+        all_images_plot = np.concatenate(all_images_plot)
+        all_distances_plot = np.concatenate(all_distances_plot)
+        all_foms_plot = np.concatenate(all_foms_plot)
 
         n_samples = 6
-        top_indices = np.flip(np.argsort(all_distances))[:n_samples]
+        top_indices = np.flip(np.argsort(all_distances_plot))[:n_samples]
 
         fig, axes = plt.subplots(2, n_samples + 1, figsize=(18, 7),
                                  gridspec_kw={'width_ratios': [0.15] + [1] * n_samples})
@@ -197,7 +233,7 @@ if os.path.exists(DEFAULT_TRAIN_SET_PATH):
             axes[r, 0].axis('off')
 
         for j, idx in enumerate(top_indices):
-            gen_img = all_images[idx]
+            gen_img = all_images_plot[idx]
             gen_img = (gen_img - gen_img.min()) / (gen_img.max() - gen_img.min() + 1e-8)
             # Find closest training image
             gen_flat = gen_img.flatten()
@@ -207,8 +243,7 @@ if os.path.exists(DEFAULT_TRAIN_SET_PATH):
             train_img = (train_img - train_img.min()) / (train_img.max() - train_img.min() + 1e-8)
 
             axes[0, j + 1].imshow(gen_img, vmin=0, vmax=1)
-            axes[0, j + 1].set_title(f'FOM: {all_foms[idx]:.3f}\nDist: {all_distances[idx]:.2f}',
-                                     fontsize=9)
+            axes[0, j + 1].set_title(f'FOM: {all_foms_plot[idx]:.3f}\nDist: {all_distances_plot[idx]:.2f}')
             axes[0, j + 1].axis('off')
             axes[1, j + 1].imshow(train_img, vmin=0, vmax=1)
             axes[1, j + 1].axis('off')
