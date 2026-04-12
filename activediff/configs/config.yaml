@@ -1,45 +1,12 @@
 defaults:
+  - base_config
   - _self_
-  - model: unet
+  - model: ddpm_unet
   - train: unet
   - active_learning: default
-  - inference: unet
+  - inference: ddpm
   - evaluation: base
   - datamodule: nanophoto
   - callbacks: default
   - trainer: default
-
-debug: false
-dtype: float32
-
-data:
-  image_shape: [101, 91]
-  padded_image_shape: [104, 96]
-
-
-generation:
-  batch_size: 32
-
-fom:
-  n_parallel_workers: 8
-  skip_meep: false
-
-wandb:
-  enabled: true
-  project: activediff
-  entity: nanophoto
-  name: active-diffusion
-  tags: []
-  notes: null
-
-use_mixed_precision: false
-gradient_accumulation_steps: 1
-compile_model: false
-
-train:
-  n_compute_steps: 5_000_000
-  seed: -1
-  lr: 0.0001
-  num_time_steps: 1000
-  ema_decay: 0.9999
-  ema_update_every: 1
+  - experiment: null

@@ -313,10 +313,12 @@ class CompareToTrainClosestImage(EvaluationFunction):
         distances = np.array(distances)
         closest_images_arr = np.array(closest_images)
 
-        n_samples = 4
+        n_samples = 6
         indices = np.flip(np.argsort(distances))[:n_samples]
-        fig, axes = plt.subplots(2, n_samples + 1, figsize=(15, 9),
-                                 gridspec_kw={'width_ratios': [0.15] + [1] * n_samples})
+        fig, axes = plt.subplots(2, n_samples + 1, figsize=(15, 6),
+                                 gridspec_kw={'width_ratios': [0.15] + [1] * n_samples,
+                                              'hspace': 0.05},
+                                 constrained_layout=True)
         row_labels = ['Generated', 'Training set']
         for i in range(2):
             axes[i, 0].text(0.5, 0.5, row_labels[i], transform=axes[i, 0].transAxes,
@@ -329,11 +331,11 @@ class CompareToTrainClosestImage(EvaluationFunction):
             gen_img = (gen_img - gen_img.min()) / (gen_img.max() - gen_img.min() + 1e-8)
             train_img = (train_img - train_img.min()) / (train_img.max() - train_img.min() + 1e-8)
             axes[0, j + 1].imshow(gen_img, vmin=0, vmax=1)
-            axes[0, j + 1].set_title(f'FOM: {fom[idx]:.3f}, Dist: {distances[idx]:.4f}', fontsize=16)
+            axes[0, j + 1].set_title(f'FOM: {fom[idx]:.3f},\n Dist: {distances[idx]:.4f}', fontsize=16)
             axes[0, j + 1].axis('off')
             axes[1, j + 1].imshow(train_img, vmin=0, vmax=1)
             axes[1, j + 1].axis('off')
-        plt.subplots_adjust(top=0.92)
+        # plt.subplots_adjust(top=0.92)
         save_file = os.path.join(savepath, f"generated_vs_closest_train.{file_format}")
         plt.savefig(save_file, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()

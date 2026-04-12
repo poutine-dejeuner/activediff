@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - override /active_learning: hot_start_long
+  - override /model: ddim_unet
+
+model:
+  lr_scheduler: cosine
+
+wandb:
+  name: hot-start-long
+  tags: [hot_start_long]

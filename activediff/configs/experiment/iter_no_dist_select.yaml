@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - override /active_learning: iter_no_select
+
+wandb:
+  name: iter-no-dist-select
+  tags: [iter_no_dist_select]

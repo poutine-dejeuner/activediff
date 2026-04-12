@@ -15,8 +15,13 @@ import matplotlib.pyplot as plt
 import activediff
 from activediff.utils import compute_distances, dist_select, binarisation, filter_similar_samples
 
-from eval_single_file_standalone import eval_single_file
+from eval_single_file_standalone import eval_single_file, CompareToTrainClosestImage
 
+def normalize_binarize(images: torch.tensor, threshold: float = 0.5) -> torch.Tensor:
+    """Binarize images using a simple threshold."""
+    images = (images - images.min()) / (images.max() - images.min() + 1e-8)
+    images = (images > threshold).float()
+    return images
 
 BASE_DIR = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
 distance_select = True
@@ -37,6 +42,8 @@ plt.rcParams.update({
 
 all_images = []
 all_foms = []
+# Cache loaded data to avoid re-reading from disk later
+loaded_data: dict[str, tuple[np.ndarray, np.ndarray | None]] = {}
 
 # Find all image files recursively under BASE_DIR, sorted for reproducibility
 # Exclude the "all/" aggregation directory
@@ -56,21 +63,18 @@ for img_file in img_files_all:
     if not fom_files:
         fom_files = glob.glob(os.path.join(folder, f"selected_fom_scores_iter_{iter_idx}.pt"))
     print(f"files found in {folder}")
-    imgs = torch.load(img_file).numpy()
-    if fom_files:
+    imgs = normalize_binarize(torch.load(img_file)).numpy()
+    foms = torch.load(fom_files[0]).numpy() if fom_files else None
+    if foms is not None:
         print(f"  FOM file found: {fom_files[0]}")
-        foms = torch.load(fom_files[0]).numpy()
-    else:
-        foms = None
-    eval_single_file(images=imgs, savepath=savepath,
-                     fom=foms, force_recompute=True)
+        assert foms.shape[0] == imgs.shape[0], f"FOM count {foms.shape[0]} does not match image count {imgs.shape[0]} in {folder}"
+    eval_single_file(images=imgs, savepath=savepath, fom=foms, force_recompute=True)
 
+    loaded_data[img_file] = (imgs, foms)
     all_images.append(imgs)
     print(f"  iter {iter_idx}: {imgs.shape[0]} images")
-    if fom_files:
-        fom = torch.load(fom_files[0]).numpy()
-        all_foms.append(fom)
-        assert fom.shape[0] == imgs.shape[0], f"FOM count {fom.shape[0]} does not match image count {imgs.shape[0]} in {folder}"
+    if foms is not None:
+        all_foms.append(foms)
     
 
 all_images = np.concatenate(all_images)
@@ -164,6 +168,24 @@ if nn_data:
                       medianprops=dict(color='black', linewidth=1.5),
                       boxprops=dict(facecolor=cmap(2), alpha=0.7))
     ax2.set_xticklabels(labels)
+    # Linear regression on per-iteration medians and maxima
+    nn_positions = np.arange(1, len(nn_data) + 1, dtype=float)
+    x_line = np.array([nn_positions[0], nn_positions[-1]])
+
+    nn_medians = np.array([np.median(d) for d in nn_data])
+    slope_med, intercept_med = np.polyfit(nn_positions, nn_medians, 1)
+    ax2.plot(x_line, slope_med * x_line + intercept_med, color='red', linewidth=1.5,
+             linestyle='--', label=f"Median fit (slope={slope_med:.3g})")
+
+    nn_upper_whiskers = np.array([
+        np.min([np.percentile(d, 75) + 1.5 * (np.percentile(d, 75) - np.percentile(d, 25)), np.max(d)])
+        for d in nn_data
+    ])
+    slope_max, intercept_max = np.polyfit(nn_positions, nn_upper_whiskers, 1)
+    ax2.plot(x_line, slope_max * x_line + intercept_max, color='orange', linewidth=1.5,
+             linestyle='--', label=f"Upper whisker fit (slope={slope_max:.3g})")
+
+    ax2.legend(fontsize='x-small')
 ax2.set_xlabel("ASG Iteration")
 ax2.set_ylabel("NN Distance")
 ax2.set_title("NN Distance Train Set distribution")
@@ -193,63 +215,11 @@ DEFAULT_TRAIN_SET_PATH = os.path.expanduser("~/scratch/nanophoto/topoptim/fullop
 if not os.path.exists(DEFAULT_TRAIN_SET_PATH):
     print(f"WARNING: train set not found at {DEFAULT_TRAIN_SET_PATH}, skipping generated_vs_closest_train_all plot.")
 else:
-    ts = np.load(DEFAULT_TRAIN_SET_PATH)
-    ts = (ts - ts.min()) / (ts.max() - ts.min() + 1e-8)
-    ts = ts.squeeze()
-
-    all_images_plot = []
-    all_distances_plot = []
-    all_foms_plot = []
-    for img_file in img_files_all:
-        iter_idx = Path(img_file).stem.split("_")[-1]
-        dist_path = os.path.join(BASE_DIR, iter_idx, "nn_distances.npy")
-        fom_file_pt = glob.glob(os.path.join(os.path.dirname(img_file), f"selected_samples_fom_iter_{iter_idx}.pt"))
-        if not fom_file_pt:
-            fom_file_pt = glob.glob(os.path.join(os.path.dirname(img_file), f"selected_fom_scores_iter_{iter_idx}.pt"))
-        if not os.path.exists(dist_path):
-            print(f"  WARNING: nn_distances.npy not found for iter {iter_idx}, skipping.")
-            continue
-        imgs = torch.load(img_file).numpy().squeeze()
-        dists = np.load(dist_path)
-        foms = torch.load(fom_file_pt[0]).numpy() if fom_file_pt else np.zeros(len(imgs))
-        all_images_plot.append(imgs)
-        all_distances_plot.append(dists)
-        all_foms_plot.append(foms)
-
-    if all_images_plot:
-        all_images_plot = np.concatenate(all_images_plot)
-        all_distances_plot = np.concatenate(all_distances_plot)
-        all_foms_plot = np.concatenate(all_foms_plot)
-
-        n_samples = 6
-        top_indices = np.flip(np.argsort(all_distances_plot))[:n_samples]
-
-        fig, axes = plt.subplots(2, n_samples + 1, figsize=(18, 7),
-                                 gridspec_kw={'width_ratios': [0.15] + [1] * n_samples})
-        for r, label in enumerate(['Generated', 'Training set']):
-            axes[r, 0].text(0.5, 0.5, label, transform=axes[r, 0].transAxes,
-                            ha='center', va='center', fontsize=14, fontweight='bold',
-                            rotation=90)
-            axes[r, 0].axis('off')
-
-        for j, idx in enumerate(top_indices):
-            gen_img = all_images_plot[idx]
-            gen_img = (gen_img - gen_img.min()) / (gen_img.max() - gen_img.min() + 1e-8)
-            # Find closest training image
-            gen_flat = gen_img.flatten()
-            dists_to_ts = np.linalg.norm(ts.reshape(ts.shape[0], -1) - gen_flat, axis=1)
-            closest_idx = np.argmin(dists_to_ts)
-            train_img = ts[closest_idx]
-            train_img = (train_img - train_img.min()) / (train_img.max() - train_img.min() + 1e-8)
-
-            axes[0, j + 1].imshow(gen_img, vmin=0, vmax=1)
-            axes[0, j + 1].set_title(f'FOM: {all_foms_plot[idx]:.3f}\nDist: {all_distances_plot[idx]:.2f}')
-            axes[0, j + 1].axis('off')
-            axes[1, j + 1].imshow(train_img, vmin=0, vmax=1)
-            axes[1, j + 1].axis('off')
-
-        plt.subplots_adjust(top=0.90)
-        save_file = os.path.join(BASE_DIR, "generated_vs_closest_train_all.pdf")
-        plt.savefig(save_file, dpi=300, bbox_inches='tight', facecolor='white')
-        plt.close()
-        print(f"Saved to {save_file}")
+    all_images_plot = np.concatenate([imgs for imgs, _ in loaded_data.values()])
+    all_foms_plot = np.concatenate([
+        foms if foms is not None else np.zeros(imgs.shape[0])
+        for imgs, foms in loaded_data.values()
+    ])
+    compare_fn = CompareToTrainClosestImage(train_set_path=DEFAULT_TRAIN_SET_PATH)
+    compare_fn(images=all_images_plot, savepath=BASE_DIR, model_name="all", fom=all_foms_plot)
+    print(f"Saved to {os.path.join(BASE_DIR, 'generated_vs_closest_train.pdf')}")

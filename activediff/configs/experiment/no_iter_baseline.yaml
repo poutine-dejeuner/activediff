@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - override /active_learning: no_iter
+
+wandb:
+  name: no-iter-baseline
+  tags: [no_iter_baseline]

@@ -1,11 +1,12 @@
 import pytest
+import time
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset
 from timm.utils.model_ema import ModelEmaV3
 
-from activediff.models.unet import UNet, load_unet_from_checkpoint
-from activediff.models.unet_utils import compute_unet_channels
+from activediff.models.unet import UNet, load_unet_from_checkpoint, _sample_ddpm, _sample_ddim
+from activediff.models.unet_utils import compute_unet_channels, DDPM_Scheduler
 
 
 # Shared small-model kwargs to keep tests fast
@@ -180,3 +181,71 @@ class TestTraining:
                               enable_progress_bar=False, accelerator="cpu")
         trainer2.fit(model2, loader)
 
+
+
+
+def benchmark_samplers(checkpoint_path: str,
+                       num_time_steps: int = 1000,
+                       ddim_steps_list: tuple = (10, 25, 50, 100, 200),
+                       batch_size: int = 4,
+                       n_batches: int = 3,
+                       padded_image_shape: tuple = (104, 96),
+                       ema_decay: float = 0.9999):
+    """Compare generation time between DDPM and DDIM samplers.
+
+    Run directly (not via pytest):
+        python -c "from tests.test_unet import benchmark_samplers; benchmark_samplers('checkpoints/checkpoint.ckpt')"
+
+    Args:
+        checkpoint_path: Path to model checkpoint.
+        ddim_steps_list: DDIM step counts to benchmark.
+        batch_size: Images per batch.
+        n_batches: Number of batches to average over (excluding warmup).
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, ema = load_unet_from_checkpoint(checkpoint_path, ema_decay, device)
+    scheduler = DDPM_Scheduler(num_time_steps=num_time_steps, device=device)
+    model = ema.module.eval()
+
+    def _time_sampler(name, fn, warmup=1):
+        with torch.no_grad():
+            for _ in range(warmup):
+                z = torch.randn((batch_size, 1) + padded_image_shape, device=device)
+                fn(z)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        times = []
+        with torch.no_grad():
+            for _ in range(n_batches):
+                z = torch.randn((batch_size, 1) + padded_image_shape, device=device)
+                t0 = time.perf_counter()
+                fn(z)
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+        mean_t = sum(times) / len(times)
+        per_img = mean_t / batch_size
+        print(f"  {name:<30s}  {mean_t:.2f}s/batch  {per_img:.3f}s/image")
+        return mean_t, per_img
+
+    print(f"\n=== Sampler benchmark  |  device={device}  |  batch_size={batch_size}  |  n_batches={n_batches} ===")
+    results = {}
+
+    t, ti = _time_sampler(f"DDPM ({num_time_steps} steps)",
+                          lambda z: _sample_ddpm(model, scheduler, z, num_time_steps))
+    results["ddpm"] = {"steps": num_time_steps, "time_batch": t, "time_per_image": ti}
+
+    for steps in ddim_steps_list:
+        t, ti = _time_sampler(f"DDIM ({steps} steps)",
+                              lambda z, s=steps: _sample_ddim(model, scheduler, z, num_time_steps, ddim_steps=s))
+        results[f"ddim_{steps}"] = {"steps": steps, "time_batch": t, "time_per_image": ti}
+
+    ddpm_time = results["ddpm"]["time_batch"]
+    print(f"\n{'Sampler':<30s}  {'Steps':>6}  {'Time/img':>10}  {'Speedup':>8}")
+    print("-" * 60)
+    for key, r in results.items():
+        speedup = ddpm_time / r["time_batch"]
+        label = "DDPM" if key == "ddpm" else f"DDIM-{r['steps']}"
+        print(f"  {label:<28s}  {r['steps']:>6}  {r['time_per_image']:>9.3f}s  {speedup:>7.1f}x")
+
+    return results

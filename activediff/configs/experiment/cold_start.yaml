@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - override /active_learning: cold_start
+
+wandb:
+  name: cold-start
+  tags: [cold_start]

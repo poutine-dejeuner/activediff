@@ -436,20 +436,20 @@ def inference(cfg,
               checkpoint_path: str = None,
               savepath: str = "images",
               meep_eval: bool = True,
+              sampler: str = 'ddpm',
+              ddim_steps: int = 50,
+              ddim_eta: float = 0.0,
+              batch_size: int = None,
               **kwargs,
               )-> np.ndarray:
     num_time_steps = cfg.model.time_steps
     ema_decay = cfg.train.ema_decay
     n_images = cfg.active_learning.get('n_to_generate_debug', 2) if cfg.debug else cfg.active_learning.n_to_generate
-    batch_size = cfg.generation.batch_size
+    batch_size = batch_size or cfg.generation.batch_size
     image_shape = tuple(cfg.data.image_shape)
     padded_image_shape = tuple(cfg.data.padded_image_shape)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
-
-    sampler = cfg.inference.get('sampler', 'ddpm')
-    ddim_steps = cfg.inference.get('ddim_steps', 50)
-    ddim_eta = cfg.inference.get('ddim_eta', 0.0)
 
     print(f"INFERENCE (sampler={sampler}" +
           (f", steps={ddim_steps}, eta={ddim_eta})" if sampler == 'ddim' else ")"))

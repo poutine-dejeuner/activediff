@@ -52,6 +52,14 @@ def plot_channels():
             'Design\nRegion', color='red', fontsize=40, fontweight='bold',
             ha='center', va='center')
 
+    # Green arrow pointing right→left, segment centred on the outer rectangle
+    center_y = (top_channel_bottom + bot_channels_top) / 2
+    arrow_center_x = (xmin + xmax) / 2
+    arrow_half_len = ((xmax - xmin + 1) / 6)/2
+    ax.annotate('', xy=(arrow_center_x - arrow_half_len, center_y),
+                xytext=(arrow_center_x + arrow_half_len, center_y),
+                arrowprops=dict(arrowstyle='->', color='green', lw=6))
+
     # Downward arrows in channels
     arrow_kw = dict(arrowstyle='->', color='red', lw=4)
 
@@ -74,7 +82,6 @@ def plot_channels():
                     arrowprops=arrow_kw)
 
     plt.savefig('channels.pdf', bbox_inches='tight', pad_inches=0)
-    plt.show()
 
 
 def plot_channels_with_optimized_design():
@@ -106,5 +113,5 @@ def plot_train_sample():
 
 
 plot_channels()
-plot_channels_with_optimized_design()
-plot_train_sample()
+# plot_channels_with_optimized_design()
+# plot_train_sample()

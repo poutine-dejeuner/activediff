@@ -174,6 +174,10 @@ def compute_fom_scores(samples, cfg):
     # Convert back to torch tensor
     fom_scores = torch.tensor(fom_scores, dtype=torch.float32)
 
+    if fom_scores.numel() == 0:
+        print("Warning: FOM scores tensor is empty, no samples to evaluate.")
+        return fom_scores
+
     print(f"FOM scores - Min: {fom_scores.min():.4f}, "
           f"Max: {fom_scores.max():.4f}, "
           f"Mean: {fom_scores.mean():.4f}")

@@ -1,7 +1,7 @@
 # Optimized UNet model configuration for faster training
 name: unet
 defaults:
-  - /inference: unet
+  - /inference: ddpm
 
 _target_: activediff.models.unet.UNet
 

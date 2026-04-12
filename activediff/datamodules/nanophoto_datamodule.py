@@ -188,14 +188,25 @@ class NanophotoDataModule(pl.LightningDataModule):
         if not selected_files:
             return
 
+        max_iter = -1
         for selected_path in selected_files:
             selected = torch.load(selected_path, weights_only=False)
             selected = selected.to(dtype=self.dtype)
             self._new_samples.append(selected)
             print(f"Loaded {len(selected)} selected samples from {selected_path}")
+            # Extract iteration index from filename e.g. selected_samples_iter_3.pt -> 3
+            try:
+                iter_idx = int(selected_path.stem.split("_")[-1])
+                max_iter = max(max_iter, iter_idx)
+            except ValueError:
+                pass
 
         total = sum(len(s) for s in self._new_samples)
         print(f"Restored {len(selected_files)} iteration(s) with {total} total selected samples")
+
+        if max_iter >= 0:
+            self.start_iteration = max_iter + 1
+            print(f"Resuming from iteration {self.start_iteration} (last found: iter {max_iter})")
 
     def load_checkpoint(self) -> Optional[int]:
         """Load the latest checkpoint if it exists.
